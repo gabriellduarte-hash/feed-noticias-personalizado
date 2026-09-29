@@ -1,0 +1,8 @@
+feedparser
+trafilatura
+requests
+psycopg2-binary
+python-dotenv
+google-genai
+pydantic
+resend

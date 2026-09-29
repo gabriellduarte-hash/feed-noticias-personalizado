@@ -1,0 +1,38 @@
+name: Feed diário
+
+on:
+  schedule:
+    # 09:00 UTC = 06:00 em Brasília (UTC-3, sem horário de verão hoje em dia)
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}  # permite rodar manualmente também, pela aba Actions do GitHub
+
+jobs:
+  rodar-pipeline:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      FEED_USER_ID: ${{ secrets.FEED_USER_ID }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      FEED_TO_EMAIL: ${{ secrets.FEED_TO_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Coletar artigos
+        working-directory: coletor
+        run: python coletar.py
+
+      - name: Gerar resumo
+        working-directory: resumo
+        run: python resumir.py
+
+      - name: Enviar e-mail
+        working-directory: envio
+        run: python enviar.py

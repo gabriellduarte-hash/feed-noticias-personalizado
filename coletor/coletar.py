@@ -4,6 +4,7 @@ scraping bruto) e insere em `articles`. A deduplicação é feita pelo
 próprio banco, via `on conflict (url) do nothing` (a constraint unique
 que já existe em articles.url).
 """
+import re
 import time
 import urllib.robotparser as robotparser
 from urllib.parse import urlparse
@@ -17,12 +18,37 @@ from db import get_connection
 
 USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
 PAUSA_ENTRE_FONTES_SEGUNDOS = 1.5
+REGEX_PRIMEIRA_IMG = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
 
 
 def buscar_fontes(conn):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("select id, topic_id, url, type from sources")
         return cur.fetchall()
+
+
+def extrair_imagem_rss(entry):
+    """Tenta achar uma capa pro artigo, em ordem de confiabilidade.
+
+    Nem todo feed expõe isso da mesma forma — testado na prática com
+    nossas próprias fontes, media_thumbnail/media_content/enclosures
+    vieram vazios no feed que já usamos, por isso o fallback final
+    (primeira <img> dentro do HTML do resumo).
+    """
+    thumbs = entry.get("media_thumbnail")
+    if thumbs:
+        return thumbs[0].get("url")
+
+    for media in entry.get("media_content", []) or []:
+        if (media.get("medium") == "image") or (media.get("type", "").startswith("image/")):
+            return media.get("url")
+
+    for enclosure in entry.get("enclosures", []) or []:
+        if enclosure.get("type", "").startswith("image/"):
+            return enclosure.get("href")
+
+    match = REGEX_PRIMEIRA_IMG.search(entry.get("summary", "") or "")
+    return match.group(1) if match else None
 
 
 def coletar_rss(source):
@@ -38,6 +64,7 @@ def coletar_rss(source):
             "content": entry.get("summary", ""),
             "published_at": publicado,
             "author": entry.get("author"),  # nem todo feed informa; fica None se não tiver
+            "image_url": extrair_imagem_rss(entry),
         })
     return artigos
 
@@ -82,6 +109,7 @@ def coletar_scrape(source):
     metadata = trafilatura.extract_metadata(resp.text)
     titulo = metadata.title if metadata and metadata.title else url
     autor = metadata.author if metadata and metadata.author else None
+    imagem = metadata.image if metadata and metadata.image else None
 
     return [{
         "title": titulo,
@@ -89,6 +117,7 @@ def coletar_scrape(source):
         "content": texto,
         "published_at": None,
         "author": autor,
+        "image_url": imagem,
     }]
 
 
@@ -100,8 +129,8 @@ def salvar_artigos(conn, source_id, artigos):
                 continue
             cur.execute(
                 """
-                insert into articles (source_id, title, url, content, published_at, author)
-                values (%s, %s, %s, %s, %s, %s)
+                insert into articles (source_id, title, url, content, published_at, author, image_url)
+                values (%s, %s, %s, %s, %s, %s, %s)
                 on conflict (url) do nothing
                 returning id
                 """,
@@ -112,6 +141,7 @@ def salvar_artigos(conn, source_id, artigos):
                     artigo["content"],
                     artigo["published_at"],
                     artigo.get("author"),
+                    artigo.get("image_url"),
                 ),
             )
             if cur.fetchone():

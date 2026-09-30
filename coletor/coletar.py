@@ -4,6 +4,7 @@ scraping bruto) e insere em `articles`. A deduplicação é feita pelo
 próprio banco, via `on conflict (url) do nothing` (a constraint unique
 que já existe em articles.url).
 """
+import html
 import re
 import time
 import urllib.robotparser as robotparser
@@ -19,6 +20,16 @@ from db import get_connection
 USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
 PAUSA_ENTRE_FONTES_SEGUNDOS = 1.5
 REGEX_PRIMEIRA_IMG = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
+REGEX_TAG_HTML = re.compile(r"<[^>]+>")
+
+
+def limpar_html(texto):
+    """Tira tags HTML e desfaz entidades (&#8217; etc.) — alguns feeds
+    (ex.: G1) mandam o resumo com HTML de verdade dentro (<img>, <br>),
+    diferente de outros que já vêm em texto puro."""
+    sem_tags = REGEX_TAG_HTML.sub(" ", texto or "")
+    texto_limpo = html.unescape(sem_tags)
+    return " ".join(texto_limpo.split())
 
 
 def buscar_fontes(conn):
@@ -59,9 +70,9 @@ def coletar_rss(source):
         if getattr(entry, "published_parsed", None):
             publicado = time.strftime("%Y-%m-%d %H:%M:%S", entry.published_parsed)
         artigos.append({
-            "title": entry.get("title", "(sem título)"),
+            "title": limpar_html(entry.get("title", "(sem título)")),
             "url": entry.get("link"),
-            "content": entry.get("summary", ""),
+            "content": limpar_html(entry.get("summary", "")),
             "published_at": publicado,
             "author": entry.get("author"),  # nem todo feed informa; fica None se não tiver
             "image_url": extrair_imagem_rss(entry),

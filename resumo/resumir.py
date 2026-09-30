@@ -1,8 +1,9 @@
 """
 Gera um resumo por artigo com a API do Gemini, classifica cada artigo
-numa categoria editorial fixa (Tecnologia, Finanças, etc.), monta o
-HTML do e-mail em formato de feed agrupado por categoria
-(resumo/template.py) e salva em `digests`.
+numa categoria editorial fixa (Tecnologia, Finanças, etc.), grava
+categoria+resumo de volta em `articles` (dado estruturado, reaproveitado
+pelo hub de leitura), monta o HTML do e-mail em formato de feed
+agrupado por categoria (resumo/template.py) e salva em `digests`.
 
 Importante: "tópico" (o que o usuário cadastrou pra acompanhar, ex.:
 "Inteligência Artificial") e "categoria" (a classificação editorial do
@@ -16,7 +17,6 @@ from datetime import date
 from typing import Literal, get_args
 
 from google import genai
-from google.genai.errors import ClientError, ServerError
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
@@ -59,21 +59,23 @@ class ResumoTopico(BaseModel):
 
 
 def buscar_artigos_por_topico(conn):
-    """Agrupa os artigos coletados por tópico.
+    """Agrupa por tópico os artigos ainda não categorizados.
 
-    Protótipo: pega todos os artigos, sem filtro de data. Quando o
-    agendador estiver rodando de verdade (1x/dia), trocar o SELECT por
-    um filtro em `articles.collected_at > now() - interval '24 hours'`.
+    `category is null` faz dupla função: evita reprocessar (e pagar de
+    novo) um artigo que já foi resumido, e naturalmente escopa cada
+    rodada só pro que é novo — o mesmo efeito prático que um filtro de
+    data traria, sem precisar de um.
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
-            select topics.name as topic_name,
+            select articles.id, topics.name as topic_name,
                    articles.title, articles.url, articles.content,
                    articles.author, articles.published_at
             from articles
             join sources on sources.id = articles.source_id
             join topics on topics.id = sources.topic_id
+            where articles.category is null
             order by topics.name, articles.collected_at
             """
         )
@@ -102,12 +104,15 @@ def resumir_artigos_do_topico(client, topico, artigos):
     """Chama o Gemini com retry + backoff exponencial, pedindo saída
     estruturada (JSON) com um resumo + categoria por artigo.
 
-    ServerError (5xx, ex.: 503 "alta demanda") e ClientError 429 (rate
-    limit) são erros passageiros — vale tentar de novo, inclusive no
-    tier pago (quota maior, mas ainda existe). Qualquer outro
-    ClientError (400, 401, 404, ...) é erro de verdade (prompt inválido,
-    chave errada, etc.) e não adianta insistir, então propaga na hora.
+    Antes isso pegava exceções tipadas (ServerError/ClientError) do SDK
+    — na prática, um 503 "alta demanda" real não bateu com nenhuma das
+    duas (motivo exato não identificado; pode ser diferença de versão
+    do SDK ou da Interactions API especificamente). Trocado por uma
+    checagem no texto do erro, mais grosseira mas não depende de
+    acertar o tipo exato da exceção.
     """
+    SINAIS_NAO_RETENTAVEIS = ("400", "401", "403", "404", "invalid", "permission", "api key")
+
     for tentativa in range(1, MAX_TENTATIVAS + 1):
         try:
             interaction = client.interactions.create(
@@ -122,12 +127,11 @@ def resumir_artigos_do_topico(client, topico, artigos):
                 },
             )
             return ResumoTopico.model_validate_json(interaction.output_text)
-        except ServerError as erro:
-            motivo = f"servidor sobrecarregado ({erro.code})"
-        except ClientError as erro:
-            if erro.code != 429:
+        except Exception as erro:
+            texto_erro = str(erro).lower()
+            if any(sinal in texto_erro for sinal in SINAIS_NAO_RETENTAVEIS):
                 raise
-            motivo = "rate limit (429)"
+            motivo = str(erro)
 
         if tentativa == MAX_TENTATIVAS:
             raise RuntimeError(f"Gemini falhou após {MAX_TENTATIVAS} tentativas: {motivo}")
@@ -151,6 +155,7 @@ def montar_cards(topico, artigos, resposta: ResumoTopico):
             print(f"  aviso: modelo não retornou resumo pro artigo {i} de '{topico}', pulando.")
             continue
         cards.append({
+            "id": artigo["id"],
             "title": artigo["title"],
             "url": artigo["url"],
             "author": artigo["author"],
@@ -166,6 +171,19 @@ def agrupar_por_categoria(cards):
     for card in cards:
         grupos[card["categoria"]].append(card)
     return {categoria: itens for categoria, itens in grupos.items() if itens}
+
+
+def salvar_categorizacao(conn, cards):
+    """Grava categoria + resumo de volta em `articles` — vira dado
+    estruturado reaproveitável (ex.: pelo hub de leitura em Next.js),
+    em vez de existir só dentro do HTML do e-mail."""
+    with conn.cursor() as cur:
+        for card in cards:
+            cur.execute(
+                "update articles set category = %s, ai_summary = %s where id = %s",
+                (card["categoria"], card["resumo"], card["id"]),
+            )
+    conn.commit()
 
 
 def salvar_digest(conn, user_id, html):
@@ -206,8 +224,11 @@ def main():
             todos_os_cards.extend(montar_cards(topico, artigos, resposta))
 
         if not todos_os_cards:
-            print("Nenhum resumo gerado, nada a salvar.")
+            print("Nenhum artigo novo pra resumir.")
             return
+
+        salvar_categorizacao(conn, todos_os_cards)
+        print(f"{len(todos_os_cards)} artigo(s) categorizados e salvos em `articles`.")
 
         cards_por_categoria = agrupar_por_categoria(todos_os_cards)
         html = montar_email_html(cards_por_categoria, date.today())

@@ -1,8 +1,16 @@
 """
 Pega o digest de hoje (ainda não enviado) e dispara por e-mail via
-Resend. Marca `digests.sent_at` depois do envio confirmado — é a
-coluna que já existia no schema desde o início, só esperando esta
-etapa pra ser usada de verdade.
+Resend, pro dono (FEED_TO_EMAIL) + quem estiver em `digest_recipients`
+(lista de compartilhamento gerenciada em /compartilhar no hub). Marca
+`digests.sent_at` depois do envio confirmado — é a coluna que já
+existia no schema desde o início, só esperando esta etapa pra ser
+usada de verdade.
+
+IMPORTANTE: enquanto o sender for `onboarding@resend.dev` (sem domínio
+verificado), o Resend só entrega pro e-mail da PRÓPRIA conta Resend —
+destinatários extras em `digest_recipients` não vão receber nada de
+verdade até você verificar um domínio em resend.com/domains e trocar
+FROM_ADDRESS.
 """
 import os
 
@@ -32,6 +40,12 @@ def buscar_digest_pendente(conn, user_id):
         return cur.fetchone()
 
 
+def buscar_destinatarios_extras(conn, user_id):
+    with conn.cursor() as cur:
+        cur.execute("select email from digest_recipients where user_id = %s", (user_id,))
+        return [linha[0] for linha in cur.fetchall()]
+
+
 def marcar_como_enviado(conn, digest_id):
     with conn.cursor() as cur:
         cur.execute("update digests set sent_at = now() where id = %s", (digest_id,))
@@ -50,10 +64,12 @@ def main():
             print("Nenhum digest pendente de hoje (já foi enviado, ou resumir.py ainda não rodou hoje).")
             return
 
+        destinatarios = [destinatario] + buscar_destinatarios_extras(conn, user_id)
+
         try:
             resposta = resend.Emails.send({
                 "from": FROM_ADDRESS,
-                "to": [destinatario],
+                "to": destinatarios,
                 "subject": "Seu resumo diário",
                 "html": digest["html_content"],
             })
@@ -61,7 +77,7 @@ def main():
             print(f"Erro ao enviar e-mail: {erro}")
             return
 
-        print(f"E-mail enviado: {resposta}")
+        print(f"E-mail enviado pra {len(destinatarios)} destinatário(s): {resposta}")
         marcar_como_enviado(conn, digest["id"])
         print("`digests.sent_at` atualizado.")
     finally:

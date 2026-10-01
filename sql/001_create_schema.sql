@@ -10,6 +10,11 @@
 -- ------------------------------------------------------------
 create table topics (
     id         uuid primary key default gen_random_uuid(),
+    -- ATENÇÃO: on delete cascade aqui propaga até sources/articles (e o
+    -- mesmo em digests.user_id). Apagar um usuário em Authentication >
+    -- Users zera TODOS os dados dele, sem aviso. Já causou perda real
+    -- de dados em 30/09 (ver log do dia) — nunca apagar usuário de
+    -- teste sem ter certeza do que está ligado a ele.
     user_id    uuid not null references auth.users(id) on delete cascade,
     name       text not null,
     created_at timestamptz not null default now()
@@ -57,7 +62,7 @@ create index idx_articles_collected_at on articles(collected_at);
 -- ------------------------------------------------------------
 create table digests (
     id           uuid primary key default gen_random_uuid(),
-    user_id      uuid not null references auth.users(id) on delete cascade,
+    user_id      uuid not null references auth.users(id) on delete cascade,  -- ver aviso em topics.user_id acima
     digest_date  date not null,
     html_content text,
     sent_at      timestamptz,

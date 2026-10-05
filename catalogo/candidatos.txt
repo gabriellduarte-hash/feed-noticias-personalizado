@@ -1,0 +1,67 @@
+# Candidatos pro catálogo do "Seguir fontes".
+# Formato: Categoria | URL do site ou do feed | Nome (opcional)
+# Categorias válidas: Tecnologia, Finanças, Humor, Política, Ciência,
+#                     Saúde, Esportes, Entretenimento, Mundo, Outros
+# Não precisa achar o RSS na mão: o catalogar.py descobre a partir do site.
+# O que não passar na validação aparece como "rejeitado" no relatório.
+
+# --- Tecnologia ---
+Tecnologia | https://www.tecmundo.com.br | TecMundo
+Tecnologia | https://www.techtudo.com.br | TechTudo
+Tecnologia | https://gizmodo.uol.com.br
+Tecnologia | https://meiobit.com
+Tecnologia | https://www.tudocelular.com
+Tecnologia | https://macmagazine.com.br
+Tecnologia | https://www.adrenaline.com.br
+
+# --- Games (entram como Entretenimento, como a IA classifica) ---
+Entretenimento | https://br.ign.com | IGN Brasil
+Entretenimento | https://www.theenemy.com.br
+Entretenimento | https://www.gameblast.com.br | GameBlast
+Entretenimento | https://www.nintendoblast.com.br | Nintendo Blast
+Entretenimento | https://blog.br.playstation.com | PlayStation.Blog BR
+Entretenimento | https://www.voxel.com.br | Voxel
+Entretenimento | https://tribogamer.com | Tribo Gamer
+
+# --- Cinema, séries e cultura pop ---
+Entretenimento | https://www.omelete.com.br
+Entretenimento | https://www.adorocinema.com
+Entretenimento | https://jovemnerd.com.br
+
+# --- Finanças ---
+Finanças | https://www.seudinheiro.com
+Finanças | https://www.istoedinheiro.com.br | IstoÉ Dinheiro
+Finanças | https://einvestidor.estadao.com.br
+Finanças | https://www.suno.com.br/noticias
+
+# --- Política ---
+Política | https://g1.globo.com/rss/g1/politica/ | G1 Política
+Política | https://www.poder360.com.br
+Política | https://www.cartacapital.com.br
+Política | https://congressoemfoco.uol.com.br
+
+# --- Ciência ---
+Ciência | https://revistapesquisa.fapesp.br | Revista Pesquisa FAPESP
+Ciência | https://super.abril.com.br | Superinteressante
+Ciência | https://jornal.usp.br | Jornal da USP
+Ciência | https://g1.globo.com/rss/g1/ciencia/ | G1 Ciência
+
+# --- Saúde ---
+Saúde | https://saude.abril.com.br | Veja Saúde
+Saúde | https://drauziovarella.uol.com.br | Drauzio Varella
+Saúde | https://g1.globo.com/rss/g1/bemestar/ | G1 Bem Estar
+
+# --- Esportes ---
+Esportes | https://ge.globo.com
+Esportes | https://www.lance.com.br
+Esportes | https://www.espn.com.br | ESPN Brasil
+
+# --- Mundo ---
+Mundo | https://g1.globo.com/rss/g1/mundo/ | G1 Mundo
+Mundo | https://www.bbc.com/portuguese | BBC News Brasil
+Mundo | https://rss.dw.com/rdf/rss-br-all | DW Brasil
+Mundo | https://www.rfi.fr/br/ | RFI Brasil
+
+# --- Humor ---
+Humor | https://www.sensacionalista.com.br | Sensacionalista
+Humor | https://www.kibeloco.com.br | Kibe Loco

@@ -1,8 +1,9 @@
 """
 Lê as fontes cadastradas em `sources`, busca conteúdo novo (RSS, sitemap
 de notícias ou scraping bruto) e insere em `articles`. A deduplicação é feita pelo
-próprio banco, via `on conflict (url) do nothing` (a constraint unique
-que já existe em articles.url).
+próprio banco, via `on conflict (source_id, url) do nothing` (unique por
+fonte desde o sql/023: duas fontes com o mesmo feed têm cada uma a sua
+cópia dos artigos).
 """
 import html
 import re
@@ -15,7 +16,7 @@ import requests
 import trafilatura
 from psycopg2.extras import RealDictCursor
 
-from alternativas import eh_google_news, ler_sitemap, limpar_titulo_google_news
+from alternativas import eh_google_news, entradas_do_site, ler_sitemap, limpar_titulo_google_news, url_google_news
 from db import get_connection
 
 USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
@@ -64,11 +65,34 @@ def extrair_imagem_rss(entry):
     return match.group(1) if match else None
 
 
+def baixar_feed(url):
+    """Com o nosso User-Agent: o feedparser.parse(url) usaria o dele, que
+    alguns sites bloqueiam."""
+    resposta = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+    resposta.raise_for_status()
+    return feedparser.parse(resposta.content)
+
+
 def coletar_rss(source):
-    feed = feedparser.parse(source["url"])
     google_news = eh_google_news(source["url"])
+    try:
+        entradas = baixar_feed(source["url"]).entries
+    except requests.RequestException as erro:
+        if google_news:
+            raise
+        print(f"  RSS falhou ({erro})")
+        entradas = []
+    if not entradas and not google_news:
+        # Plano B: o endereço não é um feed (ex.: salvaram a página do
+        # site como RSS) ou o site bloqueia o GitHub Actions. O Google
+        # Notícias do mesmo site não depende do site responder.
+        p = urlparse(source["url"])
+        site = f"{p.scheme}://{p.netloc}"
+        print("  tentando pelo Google Notícias")
+        entradas = entradas_do_site(baixar_feed(url_google_news(site)).entries, site)
+        google_news = True
     artigos = []
-    for entry in feed.entries:
+    for entry in entradas:
         publicado = None
         if getattr(entry, "published_parsed", None):
             publicado = time.strftime("%Y-%m-%d %H:%M:%S", entry.published_parsed)
@@ -144,7 +168,10 @@ def coletar_sitemap(source, conn):
     de baixar cada matéria nova com o trafilatura, como no scrape."""
     itens = ler_sitemap(source["url"], USER_AGENT, limite=MAX_MATERIAS_SITEMAP)
     with conn.cursor() as cur:
-        cur.execute("select url from articles where url = any(%s)", ([i["url"] for i in itens],))
+        cur.execute(
+            "select url from articles where source_id = %s and url = any(%s)",
+            (source["id"], [i["url"] for i in itens]),
+        )
         ja_salvas = {linha[0] for linha in cur.fetchall()}
 
     artigos = []
@@ -185,7 +212,7 @@ def salvar_artigos(conn, source_id, artigos):
                 """
                 insert into articles (source_id, title, url, content, published_at, author, image_url)
                 values (%s, %s, %s, %s, %s, %s, %s)
-                on conflict (url) do nothing
+                on conflict (source_id, url) do nothing
                 returning id
                 """,
                 (

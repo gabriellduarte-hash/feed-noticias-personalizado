@@ -29,6 +29,13 @@ jobs:
         working-directory: coletor
         run: python coletar.py
 
+      # Vitrine da aba "Explorar" do hub. Se falhar, não deve impedir o
+      # resumo e o e-mail do dia, que não dependem disso.
+      - name: Coletar notícias do catálogo
+        working-directory: coletor
+        run: python coletar_catalogo.py
+        continue-on-error: true
+
       - name: Gerar resumo
         working-directory: resumo
         run: python resumir.py

@@ -31,7 +31,7 @@ Entretenimento | https://jovemnerd.com.br
 # --- Finanças ---
 Finanças | https://www.seudinheiro.com
 Finanças | https://www.istoedinheiro.com.br | IstoÉ Dinheiro
-Finanças | https://einvestidor.estadao.com.br
+Finanças | https://einvestidor.estadao.com.br | E-Investidor
 Finanças | https://www.suno.com.br/noticias
 
 # --- Política ---

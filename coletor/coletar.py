@@ -1,6 +1,6 @@
 """
-Lê as fontes cadastradas em `sources`, busca conteúdo novo (RSS ou
-scraping bruto) e insere em `articles`. A deduplicação é feita pelo
+Lê as fontes cadastradas em `sources`, busca conteúdo novo (RSS, sitemap
+de notícias ou scraping bruto) e insere em `articles`. A deduplicação é feita pelo
 próprio banco, via `on conflict (url) do nothing` (a constraint unique
 que já existe em articles.url).
 """
@@ -15,10 +15,12 @@ import requests
 import trafilatura
 from psycopg2.extras import RealDictCursor
 
+from alternativas import eh_google_news, ler_sitemap, limpar_titulo_google_news
 from db import get_connection
 
 USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
 PAUSA_ENTRE_FONTES_SEGUNDOS = 1.5
+MAX_MATERIAS_SITEMAP = 10  # de cada sitemap, baixa o texto só das mais recentes
 REGEX_PRIMEIRA_IMG = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
 REGEX_TAG_HTML = re.compile(r"<[^>]+>")
 
@@ -64,15 +66,19 @@ def extrair_imagem_rss(entry):
 
 def coletar_rss(source):
     feed = feedparser.parse(source["url"])
+    google_news = eh_google_news(source["url"])
     artigos = []
     for entry in feed.entries:
         publicado = None
         if getattr(entry, "published_parsed", None):
             publicado = time.strftime("%Y-%m-%d %H:%M:%S", entry.published_parsed)
+        titulo = limpar_html(entry.get("title", "(sem título)"))
         artigos.append({
-            "title": limpar_html(entry.get("title", "(sem título)")),
+            # Google Notícias: tira o " - Nome do site" do título, e o
+            # "resumo" dele é só um link repetindo o título, então descarta
+            "title": limpar_titulo_google_news(titulo) if google_news else titulo,
             "url": entry.get("link"),
-            "content": limpar_html(entry.get("summary", "")),
+            "content": None if google_news else limpar_html(entry.get("summary", "")),
             "published_at": publicado,
             "author": entry.get("author"),  # nem todo feed informa; fica None se não tiver
             "image_url": extrair_imagem_rss(entry),
@@ -132,6 +138,43 @@ def coletar_scrape(source):
     }]
 
 
+def coletar_sitemap(source, conn):
+    """Fonte sem RSS, lida pelo sitemap de notícias (ver alternativas.py).
+    O sitemap só dá link, título, data e às vezes a imagem; o texto vem
+    de baixar cada matéria nova com o trafilatura, como no scrape."""
+    itens = ler_sitemap(source["url"], USER_AGENT, limite=MAX_MATERIAS_SITEMAP)
+    with conn.cursor() as cur:
+        cur.execute("select url from articles where url = any(%s)", ([i["url"] for i in itens],))
+        ja_salvas = {linha[0] for linha in cur.fetchall()}
+
+    artigos = []
+    for item in itens:
+        if item["url"] in ja_salvas:
+            continue
+        texto, imagem, autor = None, item["image_url"], None
+        if pode_coletar(item["url"]):
+            try:
+                resp = requests.get(item["url"], headers={"User-Agent": USER_AGENT}, timeout=10)
+                resp.raise_for_status()
+                texto = trafilatura.extract(resp.text)
+                metadata = trafilatura.extract_metadata(resp.text)
+                if metadata:
+                    imagem = imagem or metadata.image
+                    autor = metadata.author
+            except Exception as erro:
+                print(f"  não deu pra baixar {item['url']}: {erro}")
+            time.sleep(1)
+        artigos.append({
+            "title": item["title"],
+            "url": item["url"],
+            "content": texto,
+            "published_at": item["published_at"],
+            "author": autor,
+            "image_url": imagem,
+        })
+    return artigos
+
+
 def salvar_artigos(conn, source_id, artigos):
     novos = 0
     with conn.cursor() as cur:
@@ -172,6 +215,8 @@ def main():
             try:
                 if source["type"] == "rss":
                     artigos = coletar_rss(source)
+                elif source["type"] == "sitemap":
+                    artigos = coletar_sitemap(source, conn)
                 else:
                     artigos = coletar_scrape(source)
             except Exception as erro:

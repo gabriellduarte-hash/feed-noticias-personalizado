@@ -9,6 +9,10 @@ Fluxo:
        - senão, tenta caminhos comuns (/feed, /rss, /rss.xml...).
   3. Valida o feed de verdade (feedparser): tem entradas, títulos, e
      publicou algo recentemente.
+     Sem RSS (ou com o site bloqueando robôs), tenta ainda:
+       - o sitemap de notícias do site (o XML que ele publica pro Google Notícias);
+       - o RSS de busca do Google Notícias restrito ao site.
+     (ver coletor/alternativas.py)
   4. Gera um arquivo sql/0NN_catalogo_AAAA-MM-DD.sql com os INSERTs —
      não grava nada no banco. Você revisa o arquivo e roda no SQL Editor.
 
@@ -24,7 +28,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import feedparser
 import requests
@@ -48,6 +52,10 @@ TIPOS_FEED = ("application/rss+xml", "application/atom+xml", "application/feed+j
 
 RAIZ = Path(__file__).resolve().parent.parent
 
+# Reaproveita os módulos do coletor (leitura de sitemap/Google Notícias e o db.py)
+sys.path.insert(0, str(RAIZ / "coletor"))
+from alternativas import ler_sitemap, sitemaps_do_robots, url_google_news  # noqa: E402
+
 
 class Candidato:
     def __init__(self, categoria, url, nome=None, linha=0):
@@ -58,8 +66,11 @@ class Candidato:
 
 
 class Resultado:
-    def __init__(self, candidato, feed_url=None, nome=None, descricao=None, entradas=0, ultima=None, erro=None):
+    def __init__(
+        self, candidato, feed_url=None, nome=None, descricao=None, entradas=0, ultima=None, erro=None, via="rss"
+    ):
         self.candidato = candidato
+        self.via = via  # "rss", "sitemap" ou "google_news"
         self.feed_url = feed_url
         self.nome = nome
         self.descricao = descricao
@@ -228,16 +239,21 @@ def validar_feed(sessao, url):
 
 
 def catalogar(sessao, candidato):
+    """Tenta, nessa ordem: RSS do próprio site, sitemap de notícias,
+    RSS de busca do Google Notícias. Fica com o primeiro que validar."""
+    motivos = []
+    nome_site = None
     try:
         possiveis, nome_site = descobrir_feeds(sessao, candidato.url)
     except requests.RequestException as e:
-        return Resultado(candidato, erro=f"site não abriu ({descrever_erro(e)})")
+        # Site fora do ar ou bloqueando robôs: ainda dá pra tentar o Google Notícias
+        possiveis = []
+        motivos.append(f"site não abriu ({descrever_erro(e)})")
 
-    motivos = []
     for url in possiveis:
         feed, erro = validar_feed(sessao, url)
         if feed is None:
-            motivos.append(f"{url}: {erro}")
+            motivos.append(f"RSS: {url}: {erro}")
             continue
         datas = [d for d in (data_da_entrada(e) for e in feed.entries) if d]
         return Resultado(
@@ -248,8 +264,79 @@ def catalogar(sessao, candidato):
             entradas=len(feed.entries),
             ultima=max(datas) if datas else None,
         )
-    # mostra só o primeiro motivo: geralmente é o mais informativo (o feed declarado no HTML)
-    return Resultado(candidato, erro="nenhum feed válido" + (f" — {motivos[0]}" if motivos else ""))
+    # dos motivos de RSS, só o primeiro (geralmente o feed declarado no HTML)
+    motivos = [m for m in motivos if not m.startswith("RSS")] + [m for m in motivos if m.startswith("RSS")][:1]
+
+    resultado = tentar_sitemap(candidato, nome_site, motivos)
+    if resultado:
+        return resultado
+    resultado = tentar_google_news(sessao, candidato, nome_site, motivos)
+    if resultado:
+        return resultado
+    return Resultado(candidato, erro=" | ".join(motivos))
+
+
+def recente_o_bastante(datas):
+    limite = datetime.now(timezone.utc) - timedelta(days=MAX_DIAS_SEM_PUBLICAR)
+    return not datas or max(datas) >= limite
+
+
+def tentar_sitemap(candidato, nome_site, motivos):
+    """Sitemap de notícias declarado no robots.txt (ou num caminho comum).
+    Se o candidato aponta pra uma seção (ex.: bbc.com/portuguese), o
+    filtro vai junto no endereço salvo (#caminho=...)."""
+    caminho = urlparse(candidato.url).path.rstrip("/")
+    try:
+        sitemaps = sitemaps_do_robots(candidato.url, USER_AGENT)
+    except requests.RequestException as e:
+        motivos.append(f"sitemap: robots.txt não abriu ({descrever_erro(e)})")
+        return None
+    for sitemap in sitemaps:
+        endereco = sitemap + (f"#caminho={caminho}" if caminho else "")
+        try:
+            itens = ler_sitemap(endereco, USER_AGENT)
+        except Exception:
+            continue
+        datas = [i["published_at"] for i in itens if i["published_at"]]
+        if len(itens) < MIN_ENTRADAS or not recente_o_bastante(datas):
+            continue
+        return Resultado(
+            candidato,
+            feed_url=endereco,
+            nome=escolher_nome(candidato, None, nome_site),
+            descricao=None,
+            entradas=len(itens),
+            ultima=max(datas) if datas else None,
+            via="sitemap",
+        )
+    motivos.append("sem sitemap de notícias")
+    return None
+
+
+def tentar_google_news(sessao, candidato, nome_site, motivos):
+    """RSS de busca do Google Notícias restrito ao site. Confere se as
+    notícias são mesmo do site pedido (o campo <source> de cada item)."""
+    url = url_google_news(candidato.url)
+    feed, erro = validar_feed(sessao, url)
+    if feed is None:
+        motivos.append(f"Google Notícias: {erro}")
+        return None
+    rotulo = rotulo_do_dominio(candidato.url)
+    do_site = [e for e in feed.entries if rotulo in urlparse(e.get("source", {}).get("href", "")).netloc]
+    if len(do_site) < MIN_ENTRADAS:
+        motivos.append("Google Notícias: resultados não são desse site")
+        return None
+    titulo_fonte = do_site[0].get("source", {}).get("title")
+    datas = [d for d in (data_da_entrada(e) for e in do_site) if d]
+    return Resultado(
+        candidato,
+        feed_url=url,
+        nome=escolher_nome(candidato, titulo_fonte, nome_site),
+        descricao="Via Google Notícias",
+        entradas=len(do_site),
+        ultima=max(datas) if datas else None,
+        via="google_news",
+    )
 
 
 def urls_ja_no_catalogo():
@@ -257,7 +344,6 @@ def urls_ja_no_catalogo():
     Sem DATABASE_URL configurado, segue sem esse filtro (o SQL gerado usa
     on conflict do nothing de qualquer jeito)."""
     try:
-        sys.path.insert(0, str(RAIZ / "coletor"))
         from db import get_connection  # noqa: E402  (reaproveita o db.py do coletor)
 
         conn = get_connection()
@@ -270,6 +356,16 @@ def urls_ja_no_catalogo():
     except Exception as e:  # sem banco disponível: não é motivo pra parar
         print(f"(aviso: não consegui ler feed_catalog — {e}. Seguindo sem checar duplicadas.)")
         return set()
+
+
+def site_de(url):
+    """Domínio de um site ou de uma fonte do catálogo, sem 'www.'. Pro RSS
+    do Google Notícias, é o site da busca (q=site:...), não o google.com."""
+    p = urlparse(url)
+    if p.netloc == "news.google.com":
+        alvo = parse_qs(p.query).get("q", [""])[0].removeprefix("site:")
+        return alvo.split("/")[0].removeprefix("www.")
+    return p.netloc.lower().removeprefix("www.")
 
 
 def sql_texto(valor):
@@ -294,14 +390,19 @@ def escrever_sql(aprovados, caminho):
         "-- on conflict (url) do nothing: rodar duas vezes não duplica nada.",
         "-- ============================================================",
         "",
-        "insert into feed_catalog (category, name, url, description) values",
+        "-- kind: 'rss' (inclui o RSS de busca do Google Notícias) ou 'sitemap' (sql/021).",
+        "",
+        "insert into feed_catalog (category, name, url, description, kind) values",
     ]
     valores = []
     for r in sorted(aprovados, key=lambda r: (CATEGORIAS.index(r.candidato.categoria), r.nome.lower())):
         ultima = f"{r.ultima:%d/%m/%Y}" if r.ultima else "sem data"
+        origem = {"rss": "RSS do site", "sitemap": "sitemap de notícias", "google_news": "Google Notícias"}[r.via]
+        kind = "sitemap" if r.via == "sitemap" else "rss"
         valores.append(
-            f"    -- {r.entradas} entradas, última em {ultima}\n"
-            f"    ({sql_texto(r.candidato.categoria)}, {sql_texto(r.nome)}, {sql_texto(r.feed_url)}, {sql_texto(r.descricao)})"
+            f"    -- via {origem}: {r.entradas} entradas, última em {ultima}\n"
+            f"    ({sql_texto(r.candidato.categoria)}, {sql_texto(r.nome)}, {sql_texto(r.feed_url)}, "
+            f"{sql_texto(r.descricao)}, {sql_texto(kind)})"
         )
     linhas.append(",\n".join(valores))
     linhas.append("on conflict (url) do nothing;")
@@ -318,6 +419,7 @@ def main():
         print(f"  ignorado — {erro}")
 
     ja_catalogadas = urls_ja_no_catalogo()
+    sites_catalogados = {site_de(u) for u in ja_catalogadas}
     sessao = requests.Session()
     sessao.headers["User-Agent"] = USER_AGENT
 
@@ -325,6 +427,14 @@ def main():
     vistos = set(ja_catalogadas)
     for i, candidato in enumerate(candidatos, start=1):
         print(f"[{i}/{len(candidatos)}] {candidato.categoria:<14} {candidato.url}")
+        # Candidato que é a página inicial de um site já catalogado: pula,
+        # mesmo que o feed de hoje dê outro endereço (ex.: o RSS falhou e
+        # sairia pelo Google Notícias, duplicando a fonte). Candidatos com
+        # caminho (ex.: seções do G1) continuam sendo checados pela URL.
+        if urlparse(candidato.url).path.strip("/") == "" and site_de(candidato.url) in sites_catalogados:
+            print("    = site já no catálogo")
+            repetidos.append(Resultado(candidato))
+            continue
         resultado = catalogar(sessao, candidato)
         if resultado.erro:
             print(f"    ✗ {resultado.erro}")
@@ -333,7 +443,8 @@ def main():
             print(f"    = já no catálogo ({resultado.feed_url})")
             repetidos.append(resultado)
         else:
-            print(f"    ✓ {resultado.nome} — {resultado.feed_url} ({resultado.entradas} entradas)")
+            via = "" if resultado.via == "rss" else f" [via {resultado.via}]"
+            print(f"    ✓ {resultado.nome}{via} — {resultado.feed_url} ({resultado.entradas} entradas)")
             vistos.add(resultado.feed_url)
             aprovados.append(resultado)
         time.sleep(PAUSA_ENTRE_SITES_SEGUNDOS)

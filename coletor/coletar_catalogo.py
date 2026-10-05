@@ -20,6 +20,7 @@ import feedparser
 import requests
 from psycopg2.extras import RealDictCursor
 
+from alternativas import eh_google_news, ler_sitemap, limpar_titulo_google_news
 from coletar import USER_AGENT, extrair_imagem_rss, limpar_html
 from db import get_connection
 
@@ -31,7 +32,7 @@ DIAS_GUARDADOS = 14
 
 def buscar_catalogo(conn):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("select id, name, url from feed_catalog order by name")
+        cur.execute("select id, name, url, kind from feed_catalog order by name")
         return cur.fetchall()
 
 
@@ -43,7 +44,23 @@ def baixar_feed(url):
     return feedparser.parse(resposta.content)
 
 
-def extrair_noticias(feed):
+def noticias_do_sitemap(url):
+    """Só o que o sitemap traz (título, data, imagem): não baixa cada
+    matéria, porque aqui são dezenas de fontes por dia, pra uma vitrine."""
+    return [
+        {
+            "title": i["title"],
+            "url": i["url"],
+            "content": None,
+            "author": None,
+            "image_url": i["image_url"],
+            "published_at": i["published_at"],
+        }
+        for i in ler_sitemap(url, USER_AGENT, limite=MAX_POR_FONTE)
+    ]
+
+
+def extrair_noticias(feed, google_news=False):
     noticias = []
     for entry in feed.entries[:MAX_POR_FONTE]:
         link = entry.get("link")
@@ -53,10 +70,12 @@ def extrair_noticias(feed):
         data = entry.get("published_parsed") or entry.get("updated_parsed")
         if data:
             publicado = time.strftime("%Y-%m-%d %H:%M:%S+00", data)
+        titulo = limpar_html(entry.get("title", "(sem título)"))
         noticias.append({
-            "title": limpar_html(entry.get("title", "(sem título)")),
+            "title": limpar_titulo_google_news(titulo) if google_news else titulo,
             "url": link,
-            "content": limpar_html(entry.get("summary", ""))[:MAX_CARACTERES_TEXTO] or None,
+            # no Google Notícias o "resumo" é só um link repetindo o título
+            "content": None if google_news else (limpar_html(entry.get("summary", ""))[:MAX_CARACTERES_TEXTO] or None),
             "author": entry.get("author"),
             "image_url": extrair_imagem_rss(entry),
             "published_at": publicado,
@@ -109,7 +128,10 @@ def main():
         for fonte in catalogo:
             print(f"Coletando: {fonte['name']} ({fonte['url']})")
             try:
-                noticias = extrair_noticias(baixar_feed(fonte["url"]))
+                if fonte["kind"] == "sitemap":
+                    noticias = noticias_do_sitemap(fonte["url"])
+                else:
+                    noticias = extrair_noticias(baixar_feed(fonte["url"]), eh_google_news(fonte["url"]))
             except Exception as erro:
                 # uma fonte fora do ar não pode derrubar a coleta das outras
                 print(f"  erro: {erro}")

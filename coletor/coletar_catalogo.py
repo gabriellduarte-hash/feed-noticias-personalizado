@@ -20,7 +20,9 @@ import feedparser
 import requests
 from psycopg2.extras import RealDictCursor
 
-from alternativas import eh_google_news, ler_sitemap, limpar_titulo_google_news
+from urllib.parse import urlparse
+
+from alternativas import eh_google_news, entradas_do_site, ler_sitemap, limpar_titulo_google_news, url_google_news
 from coletar import USER_AGENT, extrair_imagem_rss, limpar_html
 from db import get_connection
 
@@ -44,6 +46,32 @@ def baixar_feed(url):
     return feedparser.parse(resposta.content)
 
 
+def noticias_pelo_google_news(url_feed):
+    """Plano B quando o RSS do site falha. Alguns sites (ex.: Adrenaline,
+    PLACAR) respondem 403 pras máquinas do GitHub Actions, mas não pra
+    uma conexão doméstica: bloqueiam servidores de nuvem. O Google
+    Notícias do mesmo site não depende do site responder."""
+    p = urlparse(url_feed)
+    site = f"{p.scheme}://{p.netloc}"
+    feed = baixar_feed(url_google_news(site))
+    return extrair_noticias(entradas_do_site(feed.entries, site), google_news=True)
+
+
+def coletar_fonte(fonte):
+    if fonte["kind"] == "sitemap":
+        return noticias_do_sitemap(fonte["url"]), None
+    google_news = eh_google_news(fonte["url"])
+    try:
+        noticias = extrair_noticias(baixar_feed(fonte["url"]).entries, google_news)
+        motivo = None if noticias else "RSS veio vazio"
+    except Exception as erro:
+        noticias, motivo = [], str(erro)
+    if noticias or google_news:
+        return noticias, motivo
+    print(f"  RSS falhou ({motivo}); tentando pelo Google Notícias")
+    return noticias_pelo_google_news(fonte["url"]), "via Google Notícias"
+
+
 def noticias_do_sitemap(url):
     """Só o que o sitemap traz (título, data, imagem): não baixa cada
     matéria, porque aqui são dezenas de fontes por dia, pra uma vitrine."""
@@ -60,9 +88,9 @@ def noticias_do_sitemap(url):
     ]
 
 
-def extrair_noticias(feed, google_news=False):
+def extrair_noticias(entradas, google_news=False):
     noticias = []
-    for entry in feed.entries[:MAX_POR_FONTE]:
+    for entry in entradas[:MAX_POR_FONTE]:
         link = entry.get("link")
         if not link:
             continue
@@ -128,10 +156,7 @@ def main():
         for fonte in catalogo:
             print(f"Coletando: {fonte['name']} ({fonte['url']})")
             try:
-                if fonte["kind"] == "sitemap":
-                    noticias = noticias_do_sitemap(fonte["url"])
-                else:
-                    noticias = extrair_noticias(baixar_feed(fonte["url"]), eh_google_news(fonte["url"]))
+                noticias, _ = coletar_fonte(fonte)
             except Exception as erro:
                 # uma fonte fora do ar não pode derrubar a coleta das outras
                 print(f"  erro: {erro}")

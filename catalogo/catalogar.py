@@ -54,7 +54,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 
 # Reaproveita os módulos do coletor (leitura de sitemap/Google Notícias e o db.py)
 sys.path.insert(0, str(RAIZ / "coletor"))
-from alternativas import ler_sitemap, sitemaps_do_robots, url_google_news  # noqa: E402
+from alternativas import entradas_do_site, ler_sitemap, sitemaps_do_robots, url_google_news  # noqa: E402
 
 
 class Candidato:
@@ -321,8 +321,7 @@ def tentar_google_news(sessao, candidato, nome_site, motivos):
     if feed is None:
         motivos.append(f"Google Notícias: {erro}")
         return None
-    rotulo = rotulo_do_dominio(candidato.url)
-    do_site = [e for e in feed.entries if rotulo in urlparse(e.get("source", {}).get("href", "")).netloc]
+    do_site = entradas_do_site(feed.entries, candidato.url)
     if len(do_site) < MIN_ENTRADAS:
         motivos.append("Google Notícias: resultados não são desse site")
         return None

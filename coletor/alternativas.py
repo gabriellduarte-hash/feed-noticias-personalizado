@@ -137,6 +137,14 @@ def eh_google_news(url):
     return urlparse(url).netloc == "news.google.com"
 
 
+def entradas_do_site(entradas, url_site):
+    """Do RSS do Google Notícias, só as notícias que são mesmo do site
+    pedido (pelo <source href> de cada item). A busca "site:" às vezes
+    traz notícias de outros sites que citam o domínio."""
+    rotulo = urlparse(url_site).netloc.lower().removeprefix("www.").split(".")[0]
+    return [e for e in entradas if rotulo in urlparse(e.get("source", {}).get("href", "")).netloc]
+
+
 def limpar_titulo_google_news(titulo):
     """'Manchete qualquer - ge' -> 'Manchete qualquer'."""
     return re.sub(r"\s+-\s+[^-]{1,60}$", "", titulo or "").strip() or titulo

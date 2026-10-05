@@ -8,7 +8,10 @@ on:
 
 jobs:
   rodar-pipeline:
-    runs-on: ubuntu-latest
+    # Versão fixa em vez de ubuntu-latest: o "latest" vira Ubuntu 26 em
+    # 19/10/2026, e trocar de sistema sem aviso pode quebrar o pip/Python.
+    # A atualização fica pra quando decidirmos testar.
+    runs-on: ubuntu-24.04
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -16,9 +19,11 @@ jobs:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       FEED_TO_EMAIL: ${{ secrets.FEED_TO_EMAIL }}
     steps:
-      - uses: actions/checkout@v4
+      # v7 das duas: rodam em Node.js 24 (as v4/v5 usavam Node 20, que o
+      # GitHub está aposentando — era esse o aviso nas execuções)
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

@@ -1,19 +1,19 @@
 """
 Gera um resumo por artigo com a API do Gemini, classifica cada artigo
-numa categoria editorial fixa (Tecnologia, Finanças, etc.), grava
-categoria+resumo de volta em `articles` (dado estruturado, reaproveitado
-pelo hub de leitura), monta o HTML do e-mail em formato de feed
-agrupado por categoria (resumo/template.py) e salva em `digests`.
+numa categoria editorial fixa (Tecnologia, Finanças, etc.) e grava
+categoria+resumo de volta em `articles` (o hub mostra os dois).
+
+Roda junto da coleta, de hora em hora (workflow "Coleta de notícias").
+Montar e enviar o e-mail é do envio/enviar.py, no horário que cada
+usuário escolheu (sql/024).
 
 Importante: "tópico" (o que o usuário cadastrou pra acompanhar, ex.:
 "Inteligência Artificial") e "categoria" (a classificação editorial do
 conteúdo, ex.: "Tecnologia") são coisas diferentes. O tópico decide o
 que é coletado; a categoria decide como o e-mail final é organizado.
 """
-import os
 import random
 import time
-from datetime import date
 from typing import Literal, get_args
 
 from google import genai
@@ -21,7 +21,6 @@ from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
 from db import get_connection
-from template import montar_email_html
 
 MODEL = "gemini-3.8-flash"  # tier pago; se der erro de "modelo não encontrado",
                             # confira o nome atual em ai.google.dev/gemini-api/docs/pricing
@@ -166,13 +165,6 @@ def montar_cards(topico, artigos, resposta: ResumoTopico):
     return cards
 
 
-def agrupar_por_categoria(cards):
-    grupos = {categoria: [] for categoria in CATEGORIAS}
-    for card in cards:
-        grupos[card["categoria"]].append(card)
-    return {categoria: itens for categoria, itens in grupos.items() if itens}
-
-
 def salvar_categorizacao(conn, cards):
     """Grava categoria + resumo de volta em `articles` — vira dado
     estruturado reaproveitável (ex.: pelo hub de leitura em Next.js),
@@ -186,34 +178,16 @@ def salvar_categorizacao(conn, cards):
     conn.commit()
 
 
-def salvar_digest(conn, user_id, html):
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            insert into digests (user_id, digest_date, html_content)
-            values (%s, current_date, %s)
-            on conflict (user_id, digest_date)
-            do update set html_content = excluded.html_content
-            returning id, created_at
-            """,
-            (user_id, html),
-        )
-        linha = cur.fetchone()
-    conn.commit()
-    return linha
-
-
 def main():
-    user_id = os.environ["FEED_USER_ID"]
     client = genai.Client()  # lê GEMINI_API_KEY do ambiente/.env
     conn = get_connection()
     try:
         por_topico = buscar_artigos_por_topico(conn)
         if not por_topico:
-            print("Nenhum artigo encontrado no banco.")
+            print("Nenhum artigo novo pra resumir.")
             return
 
-        todos_os_cards = []
+        total = 0
         for topico, artigos in por_topico.items():
             print(f"Resumindo '{topico}' ({len(artigos)} artigo(s))...")
             try:
@@ -221,24 +195,13 @@ def main():
             except Exception as erro:
                 print(f"  erro ao resumir '{topico}': {erro}")
                 continue
-            todos_os_cards.extend(montar_cards(topico, artigos, resposta))
+            cards = montar_cards(topico, artigos, resposta)
+            # grava por tópico: se um tópico falhar depois, os anteriores
+            # já ficam salvos e não são pagos de novo na próxima rodada
+            salvar_categorizacao(conn, cards)
+            total += len(cards)
 
-        if not todos_os_cards:
-            print("Nenhum artigo novo pra resumir.")
-            return
-
-        salvar_categorizacao(conn, todos_os_cards)
-        print(f"{len(todos_os_cards)} artigo(s) categorizados e salvos em `articles`.")
-
-        cards_por_categoria = agrupar_por_categoria(todos_os_cards)
-        html = montar_email_html(cards_por_categoria, date.today())
-
-        with open("preview.html", "w", encoding="utf-8") as f:
-            f.write(html)
-        print("Prévia salva em resumo/preview.html — abre no navegador pra ver como ficou.")
-
-        salvar_digest(conn, user_id, html)
-        print("Digest salvo na tabela `digests`.")
+        print(f"{total} artigo(s) resumidos e categorizados em `articles`.")
     finally:
         conn.close()
 

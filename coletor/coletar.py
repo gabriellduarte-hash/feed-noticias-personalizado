@@ -5,6 +5,7 @@ próprio banco, via `on conflict (source_id, url) do nothing` (unique por
 fonte desde o sql/023: duas fontes com o mesmo feed têm cada uma a sua
 cópia dos artigos).
 """
+import argparse
 import html
 import re
 import time
@@ -35,9 +36,19 @@ def limpar_html(texto):
     return " ".join(texto_limpo.split())
 
 
-def buscar_fontes(conn):
+def buscar_fontes(conn, fonte_id=None, so_sem_artigos=False):
+    """Todas as fontes; ou só uma (--fonte); ou só as que ainda não têm
+    nenhum artigo (--sem-artigos), pra acabou-de-ser-adicionada."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("select id, topic_id, url, type from sources")
+        cur.execute(
+            """
+            select s.id, s.topic_id, s.url, s.type
+            from sources s
+            where (%(fonte)s::uuid is null or s.id = %(fonte)s::uuid)
+              and (not %(sem_artigos)s or not exists (select 1 from articles a where a.source_id = s.id))
+            """,
+            {"fonte": fonte_id, "sem_artigos": so_sem_artigos},
+        )
         return cur.fetchall()
 
 
@@ -232,9 +243,14 @@ def salvar_artigos(conn, source_id, artigos):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fonte", help="coleta só esta fonte (uuid)")
+    parser.add_argument("--sem-artigos", action="store_true", help="só fontes que ainda não têm nenhum artigo")
+    args = parser.parse_args()
+
     conn = get_connection()
     try:
-        fontes = buscar_fontes(conn)
+        fontes = buscar_fontes(conn, args.fonte or None, args.sem_artigos)
         print(f"{len(fontes)} fonte(s) cadastrada(s).")
 
         for source in fontes:

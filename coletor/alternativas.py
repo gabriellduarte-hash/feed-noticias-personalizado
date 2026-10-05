@@ -140,9 +140,14 @@ def eh_google_news(url):
 def entradas_do_site(entradas, url_site):
     """Do RSS do Google Notícias, só as notícias que são mesmo do site
     pedido (pelo <source href> de cada item). A busca "site:" às vezes
-    traz notícias de outros sites que citam o domínio."""
-    rotulo = urlparse(url_site).netloc.lower().removeprefix("www.").split(".")[0]
-    return [e for e in entradas if rotulo in urlparse(e.get("source", {}).get("href", "")).netloc]
+    traz notícias de outros sites que citam o domínio, e de subdomínios."""
+    site = urlparse(url_site).netloc.lower().removeprefix("www.")
+    # domínio igual (ignorando "www."): a busca "site:" também traz
+    # subdomínios, como o fórum forum.adrenaline.com.br
+    return [
+        e for e in entradas
+        if urlparse(e.get("source", {}).get("href", "")).netloc.lower().removeprefix("www.") == site
+    ]
 
 
 def limpar_titulo_google_news(titulo):

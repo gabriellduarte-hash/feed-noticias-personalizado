@@ -1,0 +1,48 @@
+name: Coleta de notícias
+
+# De hora em hora: busca o que há de novo nas fontes dos usuários e nas
+# do catálogo (aba Explorar), e resume/categoriza com a IA só o que é
+# novo. Minuto 20 pra fugir do pico do começo da hora no GitHub.
+on:
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch: {}
+
+# Uma coleta por vez: se a anterior atrasar, a próxima espera em vez de
+# rodar junto (e gravar/resumir os mesmos artigos duas vezes).
+concurrency:
+  group: coleta
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    # Versão fixa: o "latest" vira Ubuntu 26 em 19/10/2026
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip  # reaproveita os pacotes entre as execuções (roda toda hora)
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Coletar fontes dos usuários
+        working-directory: coletor
+        run: python coletar.py
+
+      # Vitrine da aba Explorar: se falhar, não pode impedir o resumo
+      - name: Coletar notícias do catálogo
+        working-directory: coletor
+        run: python coletar_catalogo.py
+        continue-on-error: true
+
+      - name: Resumir e categorizar com IA
+        working-directory: resumo
+        run: python resumir.py

@@ -1,0 +1,51 @@
+name: Fonte nova
+
+# Disparado pelo hub quando alguém adiciona uma fonte (ou à mão, pela aba
+# Actions). Coleta só aquela fonte com o coletor completo (texto inteiro
+# via trafilatura, plano B do Google Notícias) e já resume com a IA, sem
+# esperar a próxima coleta de hora em hora.
+on:
+  workflow_dispatch:
+    inputs:
+      fonte_id:
+        description: "id da fonte (sources.id). Vazio = todas as fontes que ainda não têm artigos"
+        required: false
+        default: ""
+
+concurrency:
+  group: fonte-nova-${{ inputs.fonte_id }}
+  cancel-in-progress: false
+
+jobs:
+  coletar-fonte:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      FONTE_ID: ${{ inputs.fonte_id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      # FONTE_ID entra por variável de ambiente, nunca colado no comando:
+      # assim um valor estranho no input não vira comando no shell
+      - name: Coletar a fonte
+        working-directory: coletor
+        run: |
+          if [ -n "$FONTE_ID" ]; then
+            python coletar.py --fonte "$FONTE_ID"
+          else
+            python coletar.py --sem-artigos
+          fi
+
+      - name: Resumir e categorizar com IA
+        working-directory: resumo
+        run: python resumir.py

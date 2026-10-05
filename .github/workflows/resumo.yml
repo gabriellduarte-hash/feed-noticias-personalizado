@@ -1,0 +1,37 @@
+name: Resumo diário
+
+# De hora em hora: envia o resumo pra quem escolheu aquele horário em
+# Configurações > Resumo diário (o enviar.py decide quem; cada pessoa
+# recebe uma vez por dia). Minuto 5, logo depois da virada da hora.
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: resumo
+  cancel-in-progress: false
+
+jobs:
+  enviar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      FEED_USER_ID: ${{ secrets.FEED_USER_ID }}
+      FEED_TO_EMAIL: ${{ secrets.FEED_TO_EMAIL }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Enviar resumos do horário
+        working-directory: envio
+        run: python enviar.py

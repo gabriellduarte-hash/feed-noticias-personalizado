@@ -7,7 +7,7 @@ Estrutura:
   - seções por categoria editorial (Tecnologia, Finanças, ...);
   - cada notícia: capa da notícia ACIMA do texto, site de origem (no lugar
     do autor), título e o resumo formatado da IA;
-  - rodapé com link pras Configurações do hub e o crédito da foto.
+  - rodapé com link pro hub e onde mudar o horário do resumo.
 
 E-mail HTML é um mundo à parte: Gmail e Outlook ignoram <style> e CSS
 externo, então tudo é `style="..."` inline, com tabelas pra estrutura
@@ -135,7 +135,7 @@ def _capa(foto, dia: date, total, fontes):
         <h1 style="margin: 0; font-family: {FONTE}; font-size: 30px; line-height: 1.15; font-weight: 800;
                    letter-spacing: -0.5px; color: {PRETO};">Seu resumo do dia</h1>
         <p style="margin: 10px 0 0; font-family: {FONTE}; font-size: 13px; font-weight: 300; color: {TEXTO};">
-          {total} {'notícia' if total == 1 else 'notícias'} de {fontes} {'fonte' if fontes == 1 else 'fontes'}, resumidas pela IA
+          {total} {'notícia' if total == 1 else 'notícias'} de {fontes} {'fonte' if fontes == 1 else 'fontes'}, já {'resumida' if total == 1 else 'resumidas'} para você
         </p>
       </td></tr>
     </table>"""
@@ -228,8 +228,8 @@ def montar_email_html(cards_por_categoria: dict, data: date, foto=None) -> str:
                 Você recebe este resumo porque segue fontes no Feed de Notícias.
               </p>
               <p style="margin: 0; font-family: {FONTE}; font-size: 11px; line-height: 1.7; color: {CINZA};">
-                <a href="{HUB_URL}" style="color: {PRETO}; font-weight: 700; text-decoration: none;">Abrir o hub</a>
-                &nbsp;·&nbsp; horário e coleções em Configurações &rarr; Resumo diário
+                <a href="{HUB_URL}" style="color: {PRETO}; font-weight: 700; text-decoration: none;">Abrir o Feed de Notícias</a>
+                &nbsp;·&nbsp; para mudar o horário ou o que entra no resumo, vá em Configurações &rsaquo; Resumo diário
               </p>
             </td></tr>
           </table>

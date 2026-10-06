@@ -150,6 +150,7 @@ def main():
     conn = get_connection()
     try:
         catalogo = buscar_catalogo(conn)
+        conn.commit()  # fecha a leitura antes de baixar os feeds
         print(f"{len(catalogo)} fonte(s) no catálogo.{' (simulação: nada será gravado)' if args.simular else ''}")
 
         total_novos = 0

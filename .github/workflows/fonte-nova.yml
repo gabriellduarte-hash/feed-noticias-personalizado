@@ -46,6 +46,17 @@ jobs:
             python coletar.py --sem-artigos
           fi
 
+      - name: Enriquecer (texto completo e imagem)
+        working-directory: coletor
+        run: |
+          if [ -n "$FONTE_ID" ]; then
+            python enriquecer.py --fonte "$FONTE_ID"
+          else
+            python enriquecer.py
+          fi
+        continue-on-error: true
+
       - name: Resumir e categorizar com IA
         working-directory: resumo
         run: python resumir.py
+        timeout-minutes: 15

@@ -147,6 +147,7 @@ def main():
     conn = get_connection()
     try:
         usuarios = usuarios_no_horario(conn, agora, args.forcar, args.usuario)
+        conn.commit()
         print(f"{agora:%d/%m %H:%M} (Brasília): {len(usuarios)} usuário(s) com resumo pra enviar.")
 
         for usuario in usuarios:
@@ -158,6 +159,7 @@ def main():
 
             html = montar_email_html(agrupar_por_categoria(artigos), agora.date())
             para = destinatarios(conn, usuario)
+            conn.commit()  # leituras feitas: não segura transação durante o envio
             if args.simular:
                 print(f"  simulação: enviaria pra {para}")
                 continue

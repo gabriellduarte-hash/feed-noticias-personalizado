@@ -184,6 +184,7 @@ def coletar_sitemap(source, conn):
             (source["id"], [i["url"] for i in itens]),
         )
         ja_salvas = {linha[0] for linha in cur.fetchall()}
+    conn.commit()  # não segura a transação enquanto baixa as matérias
 
     artigos = []
     for item in itens:
@@ -251,6 +252,7 @@ def main():
     conn = get_connection()
     try:
         fontes = buscar_fontes(conn, args.fonte or None, args.sem_artigos)
+        conn.commit()  # fecha a transação da leitura antes de sair baixando feeds
         print(f"{len(fontes)} fonte(s) cadastrada(s).")
 
         for source in fontes:

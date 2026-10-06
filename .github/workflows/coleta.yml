@@ -36,13 +36,25 @@ jobs:
       - name: Coletar fontes dos usuários
         working-directory: coletor
         run: python coletar.py
+        timeout-minutes: 10
 
       # Vitrine da aba Explorar: se falhar, não pode impedir o resumo
       - name: Coletar notícias do catálogo
         working-directory: coletor
         run: python coletar_catalogo.py
+        timeout-minutes: 10
         continue-on-error: true
 
+      # Abre a página das notícias novas pra pegar texto completo e imagem
+      # (sql/025). Antes do resumo, pra IA ler a matéria inteira.
+      - name: Enriquecer (texto completo e imagem)
+        working-directory: coletor
+        run: python enriquecer.py
+        timeout-minutes: 10
+        continue-on-error: true
+
+      # o próprio resumir.py para em ~12 min (o que sobrar fica pra próxima hora)
       - name: Resumir e categorizar com IA
         working-directory: resumo
         run: python resumir.py
+        timeout-minutes: 15

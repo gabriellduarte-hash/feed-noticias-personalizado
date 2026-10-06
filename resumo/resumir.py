@@ -25,9 +25,19 @@ from db import get_connection
 MODEL = "gemini-3.8-flash"  # tier pago; se der erro de "modelo não encontrado",
                             # confira o nome atual em ai.google.dev/gemini-api/docs/pricing
 MAX_CARACTERES_POR_ARTIGO = 2000  # trunca artigos longos pra não gastar tokens à toa
-MAX_TENTATIVAS = 5
+MAX_TENTATIVAS = 5             # tentativas de chamada à API (erro de rede/503)
 ESPERA_BASE_SEGUNDOS = 2
 ESPERA_MAXIMA_SEGUNDOS = 60
+
+# Volume: em 05/10, 182 artigos de uma coleção foram numa chamada só, a
+# resposta passou do limite de tamanho, veio cortada e o job travou por
+# 25 min. Agora vai em lotes, com teto por rodada (o resto fica pra
+# próxima hora) e reserva (sql/025) pra dois jobs não pegarem o mesmo.
+TAMANHO_LOTE = 20
+MAX_POR_RODADA = 120
+TEMPO_MAXIMO_SEGUNDOS = 12 * 60   # o workflow tem 30 min; sobra pro resto
+MAX_TENTATIVAS_ARTIGO = 3         # depois disso, desiste do artigo
+RESERVA_EXPIRA = "30 minutes"     # reserva de um job que caiu volta a valer
 
 # Categorias fixas: mantém o agrupamento do feed consistente entre
 # rodadas (se o modelo pudesse inventar qualquer string, "Tecnologia" e
@@ -57,28 +67,55 @@ class ResumoTopico(BaseModel):
     artigos: list[ResumoArtigo]
 
 
-def buscar_artigos_por_topico(conn):
-    """Agrupa por tópico os artigos ainda não categorizados.
+def reservar_lote(conn, limite):
+    """Reserva até `limite` artigos sem resumo (os mais novos primeiro) e
+    devolve agrupados por tópico.
 
-    `category is null` faz dupla função: evita reprocessar (e pagar de
-    novo) um artigo que já foi resumido, e naturalmente escopa cada
-    rodada só pro que é novo — o mesmo efeito prático que um filtro de
-    data traria, sem precisar de um.
+    "for update skip locked" + marcar resumo_reservado_em: se outro job
+    estiver reservando ao mesmo tempo, cada um fica com artigos
+    diferentes. O commit no fim fecha a transação ANTES de chamar a IA —
+    deixar a transação aberta durante a espera foi o que segurou a
+    tabela e travou o sql/025 em 05/10.
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            """
-            select articles.id, topics.name as topic_name,
-                   articles.title, articles.url, articles.content,
-                   articles.author, articles.published_at
-            from articles
-            join sources on sources.id = articles.source_id
-            join topics on topics.id = sources.topic_id
-            where articles.category is null
-            order by topics.name, articles.collected_at
-            """
+            f"""
+            with escolhidos as (
+                select id from articles
+                where category is null
+                  and resumo_tentativas < %(max_tentativas)s
+                  and (resumo_reservado_em is null
+                       or resumo_reservado_em < now() - interval '{RESERVA_EXPIRA}')
+                order by collected_at desc
+                limit %(limite)s
+                for update skip locked
+            )
+            update articles a
+            set resumo_reservado_em = now(), resumo_tentativas = a.resumo_tentativas + 1
+            from escolhidos e
+            where a.id = e.id
+            returning a.id
+            """,
+            {"limite": limite, "max_tentativas": MAX_TENTATIVAS_ARTIGO},
         )
-        linhas = cur.fetchall()
+        ids = [linha["id"] for linha in cur.fetchall()]
+        linhas = []
+        if ids:
+            cur.execute(
+                """
+                select articles.id, topics.name as topic_name,
+                       articles.title, articles.url, articles.content,
+                       articles.author, articles.published_at
+                from articles
+                join sources on sources.id = articles.source_id
+                join topics on topics.id = sources.topic_id
+                where articles.id = any(%s::uuid[])
+                order by topics.name, articles.collected_at
+                """,
+                (ids,),
+            )
+            linhas = cur.fetchall()
+    conn.commit()
 
     por_topico = {}
     for linha in linhas:
@@ -118,7 +155,7 @@ def resumir_artigos_do_topico(client, topico, artigos):
                 model=MODEL,
                 system_instruction=SYSTEM_INSTRUCTION,
                 input=montar_input(topico, artigos),
-                generation_config={"maxOutputTokens": 4096},
+                generation_config={"maxOutputTokens": 8192},
                 response_format={
                     "type": "text",
                     "mime_type": "application/json",
@@ -181,27 +218,30 @@ def salvar_categorizacao(conn, cards):
 def main():
     client = genai.Client()  # lê GEMINI_API_KEY do ambiente/.env
     conn = get_connection()
+    inicio = time.monotonic()
+    total = 0
     try:
-        por_topico = buscar_artigos_por_topico(conn)
-        if not por_topico:
-            print("Nenhum artigo novo pra resumir.")
-            return
+        while total < MAX_POR_RODADA:
+            if time.monotonic() - inicio > TEMPO_MAXIMO_SEGUNDOS:
+                print("Tempo da rodada esgotado; o resto fica pra próxima.")
+                break
+            por_topico = reservar_lote(conn, min(TAMANHO_LOTE, MAX_POR_RODADA - total))
+            if not por_topico:
+                break
+            for topico, artigos in por_topico.items():
+                print(f"Resumindo '{topico}' ({len(artigos)} artigo(s))...")
+                try:
+                    resposta = resumir_artigos_do_topico(client, topico, artigos)
+                except Exception as erro:
+                    # a reserva expira em 30 min e o artigo volta pra fila
+                    # (até MAX_TENTATIVAS_ARTIGO vezes)
+                    print(f"  erro ao resumir '{topico}': {erro}")
+                    continue
+                cards = montar_cards(topico, artigos, resposta)
+                salvar_categorizacao(conn, cards)  # grava e faz commit a cada lote
+                total += len(cards)
 
-        total = 0
-        for topico, artigos in por_topico.items():
-            print(f"Resumindo '{topico}' ({len(artigos)} artigo(s))...")
-            try:
-                resposta = resumir_artigos_do_topico(client, topico, artigos)
-            except Exception as erro:
-                print(f"  erro ao resumir '{topico}': {erro}")
-                continue
-            cards = montar_cards(topico, artigos, resposta)
-            # grava por tópico: se um tópico falhar depois, os anteriores
-            # já ficam salvos e não são pagos de novo na próxima rodada
-            salvar_categorizacao(conn, cards)
-            total += len(cards)
-
-        print(f"{total} artigo(s) resumidos e categorizados em `articles`.")
+        print(f"{total} artigo(s) resumidos e categorizados nesta rodada.")
     finally:
         conn.close()
 

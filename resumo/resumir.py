@@ -1,22 +1,29 @@
 """
-Gera um resumo por artigo com a API do Gemini, classifica cada artigo
-numa categoria editorial fixa (Tecnologia, Finanças, etc.) e grava
-categoria+resumo de volta em `articles` (o hub mostra os dois).
+Gera um resumo por notícia com a API do Gemini e classifica cada uma numa
+categoria editorial fixa (Tecnologia, Finanças, etc.). Duas fases:
+
+  1. artigos das fontes dos usuários (`articles`): resumo + categoria —
+     sempre primeiro, é o que vai pro feed e pro e-mail de cada um;
+  2. notícias do catálogo (`catalog_articles`, aba Explorar): só o resumo
+     (a categoria vem da fonte), com teto por hora por causa do custo.
+
+O resumo sai em Markdown simples (parágrafos, **negrito** nos pontos
+importantes, "> citação — autor" quando houver). O hub e o e-mail
+(template.py) transformam isso em texto formatado.
 
 Roda junto da coleta, de hora em hora (workflow "Coleta de notícias").
-Montar e enviar o e-mail é do envio/enviar.py, no horário que cada
-usuário escolheu (sql/024).
 
 Importante: "tópico" (o que o usuário cadastrou pra acompanhar, ex.:
 "Inteligência Artificial") e "categoria" (a classificação editorial do
 conteúdo, ex.: "Tecnologia") são coisas diferentes. O tópico decide o
-que é coletado; a categoria decide como o e-mail final é organizado.
+que é coletado; a categoria decide como o feed e o e-mail se organizam.
 """
 import random
 import time
 from typing import Literal, get_args
 
 from google import genai
+from google.genai import types
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
@@ -25,23 +32,30 @@ from db import get_connection
 MODEL = "gemini-3.8-flash"  # tier pago; se der erro de "modelo não encontrado",
                             # confira o nome atual em ai.google.dev/gemini-api/docs/pricing
 MAX_CARACTERES_POR_ARTIGO = 2000  # trunca artigos longos pra não gastar tokens à toa
-MAX_TENTATIVAS = 5             # tentativas de chamada à API (erro de rede/503)
+MAX_TENTATIVAS = 3                # tentativas por chamada à API (rede, 503, resposta cortada)
 ESPERA_BASE_SEGUNDOS = 2
-ESPERA_MAXIMA_SEGUNDOS = 60
+ESPERA_MAXIMA_SEGUNDOS = 30
+# Sem tempo máximo, uma requisição presa segurava o passo inteiro até o
+# GitHub matar o job (06/10: só 17 resumos no dia). Com ele, a requisição
+# presa falha e é tentada de novo.
+TIMEOUT_REQUISICAO_MS = 90_000
 
-# Volume: em 05/10, 182 artigos de uma coleção foram numa chamada só, a
-# resposta passou do limite de tamanho, veio cortada e o job travou por
-# 25 min. Agora vai em lotes, com teto por rodada (o resto fica pra
-# próxima hora) e reserva (sql/026) pra dois jobs não pegarem o mesmo.
-TAMANHO_LOTE = 20
-MAX_POR_RODADA = 120
-TEMPO_MAXIMO_SEGUNDOS = 12 * 60   # o workflow tem 30 min; sobra pro resto
-MAX_TENTATIVAS_ARTIGO = 3         # depois disso, desiste do artigo
+# Volume (05/10: 182 artigos numa chamada só travaram o job). Lotes
+# pequenos, teto por rodada (o resto fica pra próxima hora) e reserva
+# (sql/026 e 027) pra dois jobs nunca pegarem a mesma notícia.
+TAMANHO_LOTE = 10                 # o resumo formatado é maior que o antigo
+MAX_POR_RODADA = 120              # artigos dos usuários
+# Catálogo: mil ou mais notícias novas por dia. A ~US$ 0,001 por resumo,
+# 40/hora dá no máximo ~US$ 29/mês. Baixe pra gastar menos.
+MAX_CATALOGO_POR_RODADA = 40
+TEXTO_MINIMO_CATALOGO = 400       # resumir só um título gera texto vazio de sentido
+TEMPO_MAXIMO_SEGUNDOS = 11 * 60   # o passo tem 15 min; conferido antes de cada chamada
+MAX_TENTATIVAS_ARTIGO = 3         # depois disso, desiste da notícia
 RESERVA_EXPIRA = "30 minutes"     # reserva de um job que caiu volta a valer
 
-# Categorias fixas: mantém o agrupamento do feed consistente entre
-# rodadas (se o modelo pudesse inventar qualquer string, "Tecnologia" e
-# "Tech" virariam grupos diferentes por acidente).
+# Categorias fixas: mantém o agrupamento consistente entre rodadas (se o
+# modelo pudesse inventar qualquer string, "Tecnologia" e "Tech" virariam
+# grupos diferentes por acidente).
 Categoria = Literal[
     "Tecnologia", "Finanças", "Humor", "Política", "Ciência",
     "Saúde", "Esportes", "Entretenimento", "Mundo", "Outros",
@@ -49,11 +63,21 @@ Categoria = Literal[
 CATEGORIAS = get_args(Categoria)
 
 SYSTEM_INSTRUCTION = (
-    "Você é um assistente que resume notícias para um feed diário por e-mail. "
-    "Para cada artigo recebido, escreva um resumo curto (2-4 frases) em "
-    "português, sem inventar informação que não esteja no texto, e classifique "
-    "o artigo em UMA categoria da lista: " + ", ".join(CATEGORIAS) + ". "
-    "Use 'Outros' só se nenhuma outra categoria fizer sentido."
+    "Você resume notícias para leitores brasileiros, num app focado em leitura. "
+    "Para cada artigo recebido, escreva o resumo em português, em Markdown, sem inventar "
+    "nada que não esteja no texto do artigo. Formato:\n"
+    "- 2 a 4 parágrafos curtos, separados por uma linha em branco. O primeiro parágrafo "
+    "conta o fato principal; os seguintes, contexto e consequências.\n"
+    "- Marque em **negrito** de 2 a 4 trechos curtos com o que é mais importante "
+    "(números, nomes, decisões, datas). Nunca uma frase inteira.\n"
+    "- Se o artigo trouxer uma declaração relevante entre aspas, inclua UMA citação em "
+    "parágrafo próprio, começando com '> ', e termine com ' — Nome' só se o texto disser "
+    "quem falou. Nunca invente citação nem autor.\n"
+    "- Sem títulos, listas ou links.\n"
+    "- Se o artigo tiver pouco texto (só título ou uma ou duas frases), escreva um único "
+    "parágrafo curto, sem completar com suposições.\n"
+    "Classifique cada artigo em UMA categoria da lista: " + ", ".join(CATEGORIAS) + ". "
+    "Use 'Outros' só se nenhuma outra fizer sentido."
 )
 
 
@@ -67,22 +91,51 @@ class ResumoTopico(BaseModel):
     artigos: list[ResumoArtigo]
 
 
-def reservar_lote(conn, limite):
-    """Reserva até `limite` artigos sem resumo (os mais novos primeiro) e
-    devolve agrupados por tópico.
+# ------------------------------------------------------------------ reserva
 
-    "for update skip locked" + marcar resumo_reservado_em: se outro job
-    estiver reservando ao mesmo tempo, cada um fica com artigos
-    diferentes. O commit no fim fecha a transação ANTES de chamar a IA —
-    deixar a transação aberta durante a espera foi o que segurou a
-    tabela e travou o sql/025 em 05/10.
+# Uma consulta de reserva por tabela. "for update skip locked" + marcar
+# resumo_reservado_em: se outro job reservar ao mesmo tempo, cada um fica
+# com notícias diferentes.
+FILTRO_PENDENTES = {
+    "articles": "category is null",
+    "catalog_articles": f"ai_summary is null and length(content) >= {TEXTO_MINIMO_CATALOGO}",
+}
+
+# Detalhes pra montar o pedido à IA. "grupo" é o contexto do lote: o
+# tópico do usuário, ou a categoria da fonte no catálogo.
+DETALHES = {
+    "articles": """
+        select a.id, t.name as grupo, a.title, a.url, a.content, a.author, a.published_at
+        from articles a
+        join sources s on s.id = a.source_id
+        join topics t on t.id = s.topic_id
+        where a.id = any(%s::uuid[])
+        order by t.name, a.collected_at
+    """,
+    "catalog_articles": """
+        select c.id, f.category as grupo, c.title, c.url, c.content, c.author, c.published_at
+        from catalog_articles c
+        join feed_catalog f on f.id = c.catalog_id
+        where c.id = any(%s::uuid[])
+        order by f.category, c.collected_at
+    """,
+}
+
+
+def reservar_lote(conn, tabela, limite):
+    """Reserva até `limite` notícias pendentes (as mais novas primeiro) e
+    devolve agrupadas por tópico/categoria.
+
+    O commit no fim fecha a transação ANTES de chamar a IA: deixar a
+    transação aberta durante a espera segurou a tabela e travou o sql/025
+    em 05/10.
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""
             with escolhidos as (
-                select id from articles
-                where category is null
+                select id from {tabela}
+                where {FILTRO_PENDENTES[tabela]}
                   and resumo_tentativas < %(max_tentativas)s
                   and (resumo_reservado_em is null
                        or resumo_reservado_em < now() - interval '{RESERVA_EXPIRA}')
@@ -90,84 +143,71 @@ def reservar_lote(conn, limite):
                 limit %(limite)s
                 for update skip locked
             )
-            update articles a
-            set resumo_reservado_em = now(), resumo_tentativas = a.resumo_tentativas + 1
+            update {tabela} t
+            set resumo_reservado_em = now(), resumo_tentativas = t.resumo_tentativas + 1
             from escolhidos e
-            where a.id = e.id
-            returning a.id
+            where t.id = e.id
+            returning t.id
             """,
             {"limite": limite, "max_tentativas": MAX_TENTATIVAS_ARTIGO},
         )
         ids = [linha["id"] for linha in cur.fetchall()]
         linhas = []
         if ids:
-            cur.execute(
-                """
-                select articles.id, topics.name as topic_name,
-                       articles.title, articles.url, articles.content,
-                       articles.author, articles.published_at
-                from articles
-                join sources on sources.id = articles.source_id
-                join topics on topics.id = sources.topic_id
-                where articles.id = any(%s::uuid[])
-                order by topics.name, articles.collected_at
-                """,
-                (ids,),
-            )
+            cur.execute(DETALHES[tabela], (ids,))
             linhas = cur.fetchall()
     conn.commit()
 
-    por_topico = {}
+    por_grupo = {}
     for linha in linhas:
-        por_topico.setdefault(linha["topic_name"], []).append(linha)
-    return por_topico
+        por_grupo.setdefault(linha["grupo"], []).append(linha)
+    return por_grupo
 
 
-def montar_input(topico, artigos):
+# ------------------------------------------------------------------ IA
+
+def montar_input(grupo, artigos):
     partes = [
         f"Artigo {i + 1}: {a['title']}\n{(a['content'] or '')[:MAX_CARACTERES_POR_ARTIGO]}"
         for i, a in enumerate(artigos)
     ]
     corpo = "\n\n".join(partes)
     return (
-        f"Tópico: {topico}\n\n"
+        f"Tópico: {grupo}\n\n"
         f"Resuma e classifique cada um dos {len(artigos)} artigos abaixo, "
         "na mesma ordem (indice 1 = Artigo 1, etc.).\n\n" + corpo
     )
 
 
-def resumir_artigos_do_topico(client, topico, artigos):
-    """Chama o Gemini com retry + backoff exponencial, pedindo saída
-    estruturada (JSON) com um resumo + categoria por artigo.
+def resumir_artigos(client, grupo, artigos):
+    """Chama o Gemini (generate_content, saída estruturada em JSON) com
+    retry e backoff exponencial.
 
-    Antes isso pegava exceções tipadas (ServerError/ClientError) do SDK
-    — na prática, um 503 "alta demanda" real não bateu com nenhuma das
-    duas (motivo exato não identificado; pode ser diferença de versão
-    do SDK ou da Interactions API especificamente). Trocado por uma
-    checagem no texto do erro, mais grosseira mas não depende de
-    acertar o tipo exato da exceção.
+    generate_content em vez da Interactions API: no teste de 06/10 foi
+    mais rápida (2,6s contra 8,4s) e é a forma padrão do SDK.
+
+    Erros "não adianta tentar de novo" (chave, permissão, pedido inválido)
+    sobem direto; o resto (rede, 503, timeout, JSON cortado) tenta de novo.
     """
     SINAIS_NAO_RETENTAVEIS = ("400", "401", "403", "404", "invalid", "permission", "api key")
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTION,
+        response_mime_type="application/json",
+        response_schema=ResumoTopico,
+        max_output_tokens=8192,
+    )
 
     for tentativa in range(1, MAX_TENTATIVAS + 1):
         try:
-            interaction = client.interactions.create(
-                model=MODEL,
-                system_instruction=SYSTEM_INSTRUCTION,
-                input=montar_input(topico, artigos),
-                generation_config={"maxOutputTokens": 8192},
-                response_format={
-                    "type": "text",
-                    "mime_type": "application/json",
-                    "schema": ResumoTopico.model_json_schema(),
-                },
+            resposta = client.models.generate_content(
+                model=MODEL, contents=montar_input(grupo, artigos), config=config
             )
-            return ResumoTopico.model_validate_json(interaction.output_text)
+            return ResumoTopico.model_validate_json(resposta.text)
         except Exception as erro:
             texto_erro = str(erro).lower()
             if any(sinal in texto_erro for sinal in SINAIS_NAO_RETENTAVEIS):
                 raise
-            motivo = str(erro)
+            motivo = f"{type(erro).__name__}: {str(erro)[:200]}"
 
         if tentativa == MAX_TENTATIVAS:
             raise RuntimeError(f"Gemini falhou após {MAX_TENTATIVAS} tentativas: {motivo}")
@@ -178,70 +218,78 @@ def resumir_artigos_do_topico(client, topico, artigos):
         time.sleep(espera)
 
 
-def montar_cards(topico, artigos, resposta: ResumoTopico):
-    """Junta o resumo/categoria (vindo do Gemini) com os dados reais do
-    artigo (vindos do banco: título, url, autor, data). O modelo nunca
-    vê nem inventa url/autor/data — isso evita alucinação nesses campos.
-    """
+def casar_resumos(artigos, resposta: ResumoTopico):
+    """Junta cada resumo (vindo do Gemini) com o id real da notícia. O
+    modelo nunca vê nem inventa url/autor/data: isso evita alucinação
+    nesses campos. Notícia sem resumo na resposta fica pendente (volta pra
+    fila quando a reserva vencer, até MAX_TENTATIVAS_ARTIGO vezes)."""
     por_indice = {item.indice: item for item in resposta.artigos}
-    cards = []
+    casados = []
     for i, artigo in enumerate(artigos, start=1):
         item = por_indice.get(i)
         if item is None:
-            print(f"  aviso: modelo não retornou resumo pro artigo {i} de '{topico}', pulando.")
+            print(f"  aviso: o modelo não devolveu resumo pro artigo {i}, fica pra depois.")
             continue
-        cards.append({
-            "id": artigo["id"],
-            "title": artigo["title"],
-            "url": artigo["url"],
-            "author": artigo["author"],
-            "published_at": artigo["published_at"],
-            "resumo": item.resumo,
-            "categoria": item.categoria,
-        })
-    return cards
+        casados.append({"id": artigo["id"], "resumo": item.resumo.strip(), "categoria": item.categoria})
+    return casados
 
 
-def salvar_categorizacao(conn, cards):
-    """Grava categoria + resumo de volta em `articles` — vira dado
-    estruturado reaproveitável (ex.: pelo hub de leitura em Next.js),
-    em vez de existir só dentro do HTML do e-mail."""
+def salvar(conn, tabela, casados):
+    """articles: resumo + categoria. catalog_articles: só o resumo (a
+    categoria do catálogo vem da fonte, em feed_catalog)."""
     with conn.cursor() as cur:
-        for card in cards:
-            cur.execute(
-                "update articles set category = %s, ai_summary = %s where id = %s",
-                (card["categoria"], card["resumo"], card["id"]),
-            )
+        for c in casados:
+            if tabela == "articles":
+                cur.execute(
+                    "update articles set category = %s, ai_summary = %s where id = %s",
+                    (c["categoria"], c["resumo"], c["id"]),
+                )
+            else:
+                cur.execute("update catalog_articles set ai_summary = %s where id = %s", (c["resumo"], c["id"]))
     conn.commit()
 
 
+# ------------------------------------------------------------------ rodada
+
+def processar(client, conn, tabela, teto, inicio):
+    total = 0
+    while total < teto:
+        if time.monotonic() - inicio > TEMPO_MAXIMO_SEGUNDOS:
+            print("  tempo da rodada esgotado; o resto fica pra próxima hora.")
+            return total, True
+        por_grupo = reservar_lote(conn, tabela, min(TAMANHO_LOTE, teto - total))
+        if not por_grupo:
+            break
+        for grupo, artigos in por_grupo.items():
+            if time.monotonic() - inicio > TEMPO_MAXIMO_SEGUNDOS:
+                # as reservadas e não processadas voltam pra fila em 30 min
+                print("  tempo da rodada esgotado; o resto fica pra próxima hora.")
+                return total, True
+            print(f"  '{grupo}': {len(artigos)} notícia(s)...")
+            try:
+                resposta = resumir_artigos(client, grupo, artigos)
+            except Exception as erro:
+                print(f"  erro ao resumir '{grupo}': {erro}")
+                continue
+            casados = casar_resumos(artigos, resposta)
+            salvar(conn, tabela, casados)  # grava e faz commit a cada lote
+            total += len(casados)
+    return total, False
+
+
 def main():
-    client = genai.Client()  # lê GEMINI_API_KEY do ambiente/.env
+    client = genai.Client(http_options={"timeout": TIMEOUT_REQUISICAO_MS})
     conn = get_connection()
     inicio = time.monotonic()
-    total = 0
     try:
-        while total < MAX_POR_RODADA:
-            if time.monotonic() - inicio > TEMPO_MAXIMO_SEGUNDOS:
-                print("Tempo da rodada esgotado; o resto fica pra próxima.")
-                break
-            por_topico = reservar_lote(conn, min(TAMANHO_LOTE, MAX_POR_RODADA - total))
-            if not por_topico:
-                break
-            for topico, artigos in por_topico.items():
-                print(f"Resumindo '{topico}' ({len(artigos)} artigo(s))...")
-                try:
-                    resposta = resumir_artigos_do_topico(client, topico, artigos)
-                except Exception as erro:
-                    # a reserva expira em 30 min e o artigo volta pra fila
-                    # (até MAX_TENTATIVAS_ARTIGO vezes)
-                    print(f"  erro ao resumir '{topico}': {erro}")
-                    continue
-                cards = montar_cards(topico, artigos, resposta)
-                salvar_categorizacao(conn, cards)  # grava e faz commit a cada lote
-                total += len(cards)
+        print("Artigos das fontes dos usuários:")
+        feitos, esgotou = processar(client, conn, "articles", MAX_POR_RODADA, inicio)
+        print(f"  {feitos} resumido(s) e categorizado(s).")
 
-        print(f"{total} artigo(s) resumidos e categorizados nesta rodada.")
+        if not esgotou:
+            print("Notícias do catálogo (aba Explorar):")
+            feitos, _ = processar(client, conn, "catalog_articles", MAX_CATALOGO_POR_RODADA, inicio)
+            print(f"  {feitos} resumida(s).")
     finally:
         conn.close()
 

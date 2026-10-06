@@ -34,6 +34,7 @@ TEXTO = "#3f3d39"
 CINZA = "#8d8a83"
 LINHA = "#e1dfda"
 FUNDO = "#f4f3f0"
+UNSPLASH_HOME = "https://unsplash.com/?utm_source=feed_de_noticias&utm_medium=referral"
 ROXO = "#6d3ff5"
 
 CSS_P = f"margin: 0 0 14px; font-family: {FONTE}; font-size: 14px; line-height: 1.75; color: {TEXTO};"
@@ -99,19 +100,22 @@ def resumo_para_html(resumo):
 # ------------------------------------------------------------------ partes
 
 def _capa(foto, dia: date, total, fontes):
-    imagem = ""
+    imagem = credito = ""
     if foto and _url_segura(foto["url"]):
+        # a foto leva pra página dela no Unsplash
         imagem = f"""
       <tr><td style="padding: 0 0 0;">
-        <img src="{_url_segura(foto['url'])}" width="600" alt=""
-             style="display: block; width: 100%; max-width: 600px; height: auto; border-radius: 16px; border: 0;">
+        <a href="{_url_segura(foto['unsplash_url'])}" style="display: block;">
+          <img src="{_url_segura(foto['url'])}" width="600" alt=""
+               style="display: block; width: 100%; max-width: 600px; height: auto; border-radius: 16px; border: 0;">
+        </a>
       </td></tr>"""
-    credito = ""
-    if foto:
+        # crédito no formato que o Unsplash pede ("Photo by Fulano on Unsplash"):
+        # nome do fotógrafo → perfil dele, "Unsplash" → página inicial, ambos com UTM
         credito = (
             f'<p style="margin: 10px 0 0; font-family: {FONTE}; font-size: 10px; color: {CINZA}; text-align: center;">'
-            f'Foto: <a href="{_url_segura(foto["fotografo_url"])}" style="color: {CINZA};">{_esc(foto["fotografo"])}</a>'
-            f' / <a href="{_url_segura(foto["unsplash_url"])}" style="color: {CINZA};">Unsplash</a></p>'
+            f'Foto de <a href="{_url_segura(foto["fotografo_url"])}" style="color: {CINZA};">{_esc(foto["fotografo"])}</a>'
+            f' no <a href="{_esc(UNSPLASH_HOME)}" style="color: {CINZA};">Unsplash</a></p>'
         )
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">

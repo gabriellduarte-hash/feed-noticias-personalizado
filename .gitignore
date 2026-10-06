@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .venv/
+
+# prévias do e-mail geradas pelo enviar.py --simular
+envio/previa-*.html

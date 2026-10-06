@@ -1,47 +1,76 @@
-"""Monta o HTML final do e-mail: um feed de cards, agrupado por
-categoria editorial (Tecnologia, Finanças, ...), cada categoria abrindo
-uma nova seção.
+"""Monta o HTML do e-mail do resumo diário, com a identidade do hub:
+preto e branco em cinzas quentes, roxo só em destaque, JetBrains Mono.
 
-E-mail HTML é um mundo à parte: a maioria dos clientes (Gmail, Outlook)
-ignora <style> no <head> e corta CSS externo, então o seguro é usar
-`style="..."` inline em cada tag — sem depender de classes/CSS separado.
+Estrutura:
+  - capa: foto do dia (Unsplash, envio/foto_do_dia.py) com a data numa
+    "pílula" embaixo, e o título do resumo;
+  - seções por categoria editorial (Tecnologia, Finanças, ...);
+  - cada notícia: capa da notícia ACIMA do texto, site de origem (no lugar
+    do autor), título e o resumo formatado da IA;
+  - rodapé com link pras Configurações do hub e o crédito da foto.
 
-Todo texto que vem de fora (título, autor, resumo gerado pela IA) passa
-por html.escape antes de entrar no HTML (o Markdown do resumo só vira
-<strong>/<em>/citação DEPOIS do escape) — sem isso, um título com "&"
-ou um resumo comparando "X < Y" quebraria a página.
+E-mail HTML é um mundo à parte: Gmail e Outlook ignoram <style> e CSS
+externo, então tudo é `style="..."` inline, com tabelas pra estrutura
+(o que todos os clientes respeitam). A fonte JetBrains Mono carrega no
+Apple Mail/iOS; no Gmail cai pra outra monoespaçada.
+
+Todo texto que vem de fora (título, site, resumo da IA) passa por
+html.escape antes de entrar no HTML (o Markdown do resumo só vira
+<strong>/<em>/citação DEPOIS do escape), e só links http(s) viram href/src.
 """
 import html
 import re
 from datetime import date
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
-CSS_CONTAINER = "font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;"
-CSS_CABECALHO = "font-size: 13px; color: #888; margin: 0 0 24px;"
-CSS_CATEGORIA = (
-    "margin: 32px 0 12px; padding-bottom: 6px; font-size: 13px; font-weight: bold; "
-    "letter-spacing: 0.5px; text-transform: uppercase; color: #444; "
-    "border-bottom: 2px solid #444;"
-)
-CSS_CARD = "margin: 0 0 20px; padding-bottom: 20px; border-bottom: 1px solid #eee;"
-CSS_CARD_TITULO = "margin: 0 0 4px; font-size: 16px; color: #1a1a1a;"
-CSS_CARD_META = "margin: 0 0 8px; font-size: 12px; color: #888;"
-CSS_CARD_RESUMO = "margin: 0 0 10px; font-size: 14px; line-height: 1.6; color: #333;"
+FUSO_BR = ZoneInfo("America/Sao_Paulo")
+
+HUB_URL = "https://feed-hub-leitura.vercel.app"
+
+FONTE = "'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace"
+PRETO = "#121212"
+TEXTO = "#3f3d39"
+CINZA = "#8d8a83"
+LINHA = "#e1dfda"
+FUNDO = "#f4f3f0"
+ROXO = "#6d3ff5"
+
+CSS_P = f"margin: 0 0 14px; font-family: {FONTE}; font-size: 14px; line-height: 1.75; color: {TEXTO};"
 CSS_CITACAO = (
-    "margin: 0 0 10px; padding: 2px 0 2px 12px; border-left: 3px solid #6d3ff5; "
-    "font-size: 14px; line-height: 1.6; font-style: italic; color: #444;"
+    f"margin: 4px 0 16px; padding: 2px 0 2px 14px; border-left: 2px solid {ROXO}; "
+    f"font-family: {FONTE}; font-size: 15px; line-height: 1.7; font-style: italic; color: {PRETO};"
 )
-CSS_CITACAO_AUTOR = "display: block; margin-top: 4px; font-style: normal; font-size: 12px; color: #888;"
-CSS_CARD_LINK = "font-size: 13px; color: #0066cc; text-decoration: none; font-weight: bold;"
-CSS_RODAPE = "margin-top: 32px; font-size: 12px; color: #888;"
+CSS_CITACAO_AUTOR = (
+    f"display: block; margin-top: 6px; font-style: normal; font-size: 11px; "
+    f"letter-spacing: 0.5px; color: {CINZA}; font-weight: 600;"
+)
+
+DIAS = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+         "agosto", "setembro", "outubro", "novembro", "dezembro"]
 
 
-def _formatar_data(dt):
-    return dt.strftime("%d/%m/%Y") if dt else "data não informada"
+def _esc(texto):
+    return html.escape(texto or "", quote=True)
+
+
+def _url_segura(url):
+    """Só http(s) vira link/imagem (nada de javascript: vindo de um feed)."""
+    return _esc(url) if url and urlparse(url).scheme in ("http", "https") else ""
+
+
+def _host(url):
+    return urlparse(url or "").netloc.removeprefix("www.")
+
+
+def data_extenso(d: date):
+    return f"{DIAS[d.weekday()]}, {d.day} de {MESES[d.month - 1]}"
 
 
 def _inline(texto):
     """Depois do html.escape: **negrito** e *itálico* do resumo da IA."""
-    texto = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", texto)
+    texto = re.sub(r"\*\*(.+?)\*\*", rf'<strong style="color: {PRETO}; font-weight: 700;">\1</strong>', texto)
     return re.sub(r"(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])", r"<em>\1</em>", texto)
 
 
@@ -50,7 +79,7 @@ def resumo_para_html(resumo):
     separados por linha em branco, **negrito**, e "> citação — Autor".
     Tudo é escapado ANTES de virar tag, então nada que a IA escreva vira
     HTML de verdade. Resumos antigos (texto corrido) viram um parágrafo."""
-    blocos = [b.strip() for b in re.split(r"\n\s*\n", resumo.strip()) if b.strip()]
+    blocos = [b.strip() for b in re.split(r"\n\s*\n", (resumo or "").strip()) if b.strip()]
     partes = []
     for bloco in blocos:
         if bloco.startswith(">"):
@@ -59,51 +88,150 @@ def resumo_para_html(resumo):
             m = re.match(r"^(.*?)\s+[—–-]\s+([^—–\-]{2,60})$", texto)
             if m:
                 texto, autor = m.group(1), m.group(2)
-            autor_html = f'<span style="{CSS_CITACAO_AUTOR}">— {html.escape(autor)}</span>' if autor else ""
-            partes.append(f'<p style="{CSS_CITACAO}">{_inline(html.escape(texto))}{autor_html}</p>')
+            autor_html = f'<span style="{CSS_CITACAO_AUTOR}">— {_esc(autor)}</span>' if autor else ""
+            partes.append(f'<p style="{CSS_CITACAO}">{_inline(_esc(texto))}{autor_html}</p>')
         else:
             texto = " ".join(linha.strip() for linha in bloco.splitlines())
-            partes.append(f'<p style="{CSS_CARD_RESUMO}">{_inline(html.escape(texto))}</p>')
+            partes.append(f'<p style="{CSS_P}">{_inline(_esc(texto))}</p>')
     return "".join(partes)
 
 
-def _montar_card(card):
-    titulo = html.escape(card["title"])
-    url = html.escape(card["url"])
-    autor = html.escape(card.get("author") or "autor não informado")
-    data_artigo = _formatar_data(card.get("published_at"))
-    resumo = resumo_para_html(card["resumo"])
+# ------------------------------------------------------------------ partes
 
-    return f"""<div style="{CSS_CARD}">
-  <p style="{CSS_CARD_TITULO}">{titulo}</p>
-  <p style="{CSS_CARD_META}">{autor} — {data_artigo}</p>
-  {resumo}
-  <a href="{url}" style="{CSS_CARD_LINK}">Leia o artigo completo →</a>
-</div>"""
+def _capa(foto, dia: date, total, fontes):
+    imagem = ""
+    if foto and _url_segura(foto["url"]):
+        imagem = f"""
+      <tr><td style="padding: 0 0 0;">
+        <img src="{_url_segura(foto['url'])}" width="600" alt=""
+             style="display: block; width: 100%; max-width: 600px; height: auto; border-radius: 16px; border: 0;">
+      </td></tr>"""
+    credito = ""
+    if foto:
+        credito = (
+            f'<p style="margin: 10px 0 0; font-family: {FONTE}; font-size: 10px; color: {CINZA}; text-align: center;">'
+            f'Foto: <a href="{_url_segura(foto["fotografo_url"])}" style="color: {CINZA};">{_esc(foto["fotografo"])}</a>'
+            f' / <a href="{_url_segura(foto["unsplash_url"])}" style="color: {CINZA};">Unsplash</a></p>'
+        )
+    return f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td align="center" style="padding: 8px 0 22px;">
+        <p style="margin: 0; font-family: {FONTE}; font-size: 11px; font-weight: 700; letter-spacing: 3px; color: {PRETO};">
+          <span style="color: {ROXO};">●</span>&nbsp;FEED DE NOTÍCIAS
+        </p>
+      </td></tr>{imagem}
+      <tr><td align="center" style="padding: {'18px' if imagem else '4px'} 0 0;">
+        <span style="display: inline-block; padding: 9px 20px; border-radius: 999px; background: {PRETO};
+                     font-family: {FONTE}; font-size: 13px; font-weight: 700; color: #ffffff; letter-spacing: 0.3px;">
+          {_esc(data_extenso(dia))}
+        </span>
+        {credito}
+      </td></tr>
+      <tr><td align="center" style="padding: 26px 8px 6px;">
+        <h1 style="margin: 0; font-family: {FONTE}; font-size: 30px; line-height: 1.15; font-weight: 800;
+                   letter-spacing: -0.5px; color: {PRETO};">Seu resumo do dia</h1>
+        <p style="margin: 10px 0 0; font-family: {FONTE}; font-size: 13px; font-weight: 300; color: {TEXTO};">
+          {total} {'notícia' if total == 1 else 'notícias'} de {fontes} {'fonte' if fontes == 1 else 'fontes'}, resumidas pela IA
+        </p>
+      </td></tr>
+    </table>"""
 
 
-def _montar_secao(categoria, cards):
-    itens = "".join(_montar_card(card) for card in cards)
-    return f'<h2 style="{CSS_CATEGORIA}">{html.escape(categoria)}</h2>{itens}'
+def _secao(categoria):
+    return f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="padding: 40px 0 6px; border-bottom: 1px solid {LINHA};">
+        <p style="margin: 0 0 8px; font-family: {FONTE}; font-size: 11px; font-weight: 700; letter-spacing: 2.5px;
+                  text-transform: uppercase; color: {ROXO};">{_esc(categoria)}</p>
+      </td></tr>
+    </table>"""
 
 
-def montar_email_html(cards_por_categoria: dict, data: date) -> str:
-    """cards_por_categoria: {categoria: [card, ...]}, na ordem em que as
-    seções devem aparecer (agrupar_por_categoria já filtra categorias
-    vazias e preserva a ordem fixa de CATEGORIAS)."""
-    secoes = "".join(
-        _montar_secao(categoria, cards)
-        for categoria, cards in cards_por_categoria.items()
-    )
-    data_formatada = data.strftime("%d/%m/%Y")
+def _noticia(card, ultima):
+    url = _url_segura(card["url"])
+    host = _host(card.get("fonte_url") or card["url"])
+    site = card.get("fonte") or host
+    capa = ""
+    if _url_segura(card.get("image_url")):
+        capa = f"""
+        <a href="{url}" style="text-decoration: none;">
+          <img src="{_url_segura(card['image_url'])}" width="600" alt=""
+               style="display: block; width: 100%; max-width: 600px; height: auto; border-radius: 12px; border: 0; margin: 0 0 16px;">
+        </a>"""
+    favicon = f"https://www.google.com/s2/favicons?domain={_esc(host)}&sz=32"
+    quando = ""
+    if card.get("published_at"):
+        p = card["published_at"]
+        if p.tzinfo:  # o banco devolve em UTC; o leitor está no Brasil
+            p = p.astimezone(FUSO_BR)
+        quando = f" &nbsp;·&nbsp; {p.day} {MESES[p.month - 1][:3]}, {p:%H:%M}"
+    return f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="padding: 26px 0 {'8px' if ultima else '22px'}; {'' if ultima else f'border-bottom: 1px solid {LINHA};'}">
+        {capa}
+        <p style="margin: 0 0 8px; font-family: {FONTE}; font-size: 11px; color: {CINZA};">
+          <img src="{favicon}" width="14" height="14" alt="" style="vertical-align: -2px; border-radius: 3px; border: 0;">
+          &nbsp;<strong style="color: {PRETO}; font-weight: 700;">{_esc(site)}</strong>{quando}
+        </p>
+        <h2 style="margin: 0 0 14px; font-family: {FONTE}; font-size: 20px; line-height: 1.3; font-weight: 800;
+                   letter-spacing: -0.3px;">
+          <a href="{url}" style="color: {PRETO}; text-decoration: none;">{_esc(card['title'])}</a>
+        </h2>
+        {resumo_para_html(card['resumo'])}
+        <a href="{url}" style="font-family: {FONTE}; font-size: 12px; font-weight: 700; color: {ROXO}; text-decoration: none;">
+          Ler em {_esc(host)} &rarr;
+        </a>
+      </td></tr>
+    </table>"""
+
+
+def montar_email_html(cards_por_categoria: dict, data: date, foto=None) -> str:
+    """cards_por_categoria: {categoria: [card, ...]} na ordem das seções.
+    card: title, url, fonte, fonte_url, image_url, published_at, resumo.
+    foto: a foto do dia (envio/foto_do_dia.py) ou None."""
+    cards = [c for itens in cards_por_categoria.values() for c in itens]
+    total = len(cards)
+    fontes = len({c.get("fonte") or _host(c["url"]) for c in cards})
+
+    corpo = []
+    for categoria, itens in cards_por_categoria.items():
+        corpo.append(_secao(categoria))
+        corpo.extend(_noticia(c, i == len(itens) - 1) for i, c in enumerate(itens))
+
+    # texto que aparece na prévia da caixa de entrada (fica escondido no corpo)
+    previa = _esc(" · ".join(c["title"] for c in cards[:3]))
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
-<body style="margin: 0; padding: 0; background-color: #f4f4f4;">
-  <div style="{CSS_CONTAINER}">
-    <p style="{CSS_CABECALHO}">Seu resumo diário — {data_formatada}</p>
-    {secoes}
-    <p style="{CSS_RODAPE}">Gerado automaticamente pelo Feed de Notícias Personalizado.</p>
-  </div>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700;800&display=swap" rel="stylesheet">
+  <title>Seu resumo do dia</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: {FUNDO};">
+  <div style="display: none; max-height: 0; overflow: hidden; opacity: 0;">{previa}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: {FUNDO};">
+    <tr><td align="center" style="padding: 24px 16px 40px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px;">
+        <tr><td>
+          {_capa(foto, data, total, fontes)}
+          {''.join(corpo)}
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="padding: 44px 0 0; border-top: 1px solid {LINHA};">
+              <p style="margin: 0 0 6px; font-family: {FONTE}; font-size: 11px; line-height: 1.7; color: {CINZA};">
+                Você recebe este resumo porque segue fontes no Feed de Notícias.
+              </p>
+              <p style="margin: 0; font-family: {FONTE}; font-size: 11px; line-height: 1.7; color: {CINZA};">
+                <a href="{HUB_URL}" style="color: {PRETO}; font-weight: 700; text-decoration: none;">Abrir o hub</a>
+                &nbsp;·&nbsp; horário e coleções em Configurações &rarr; Resumo diário
+              </p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>"""

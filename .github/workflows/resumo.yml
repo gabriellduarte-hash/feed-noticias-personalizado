@@ -21,6 +21,8 @@ jobs:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       FEED_USER_ID: ${{ secrets.FEED_USER_ID }}
       FEED_TO_EMAIL: ${{ secrets.FEED_TO_EMAIL }}
+      # Foto de capa do e-mail (opcional: sem ela, o e-mail sai sem foto)
+      UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v7
 

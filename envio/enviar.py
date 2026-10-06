@@ -36,9 +36,10 @@ from psycopg2.extras import RealDictCursor
 from resend.exceptions import ResendError
 
 from db import get_connection
+from foto_do_dia import foto_do_dia
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "resumo"))
-from template import montar_email_html  # noqa: E402
+from template import data_extenso, montar_email_html  # noqa: E402
 
 FROM_ADDRESS = "Feed de Notícias <onboarding@resend.dev>"
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -77,7 +78,8 @@ def artigos_do_resumo(conn, user_id, topic_ids):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
-            select a.title, a.url, a.author, a.published_at,
+            select a.title, a.url, a.published_at, a.image_url,
+                   coalesce(s.name, '') as fonte, s.url as fonte_url,
                    a.ai_summary as resumo, a.category as categoria
             from articles a
             join sources s on s.id = a.source_id
@@ -148,6 +150,7 @@ def main():
     try:
         usuarios = usuarios_no_horario(conn, agora, args.forcar, args.usuario)
         conn.commit()
+        foto = foto_do_dia(conn, agora.date()) if usuarios else None
         print(f"{agora:%d/%m %H:%M} (Brasília): {len(usuarios)} usuário(s) com resumo pra enviar.")
 
         for usuario in usuarios:
@@ -157,16 +160,23 @@ def main():
                 print("  nada novo nas últimas 24h, pulando (sem e-mail vazio)")
                 continue
 
-            html = montar_email_html(agrupar_por_categoria(artigos), agora.date())
+            html = montar_email_html(agrupar_por_categoria(artigos), agora.date(), foto)
             para = destinatarios(conn, usuario)
             conn.commit()  # leituras feitas: não segura transação durante o envio
             if args.simular:
-                print(f"  simulação: enviaria pra {para}")
+                arquivo = Path(__file__).parent / f"previa-{usuario['id']}.html"
+                arquivo.write_text(html, encoding="utf-8")
+                print(f"  simulação: enviaria pra {para}; prévia em {arquivo.name}")
                 continue
 
             digest_id = salvar_digest(conn, usuario["id"], agora.date(), html)
             try:
-                resend.Emails.send({"from": FROM_ADDRESS, "to": para, "subject": "Seu resumo diário", "html": html})
+                resend.Emails.send({
+                    "from": FROM_ADDRESS,
+                    "to": para,
+                    "subject": f"Seu resumo de {data_extenso(agora.date())}",
+                    "html": html,
+                })
             except ResendError as erro:
                 # não marca como enviado: a próxima rodada (daqui a 1h) tenta de novo
                 print(f"  erro ao enviar: {erro}")

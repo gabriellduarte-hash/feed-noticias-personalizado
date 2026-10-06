@@ -32,7 +32,7 @@ ESPERA_MAXIMA_SEGUNDOS = 60
 # Volume: em 05/10, 182 artigos de uma coleção foram numa chamada só, a
 # resposta passou do limite de tamanho, veio cortada e o job travou por
 # 25 min. Agora vai em lotes, com teto por rodada (o resto fica pra
-# próxima hora) e reserva (sql/025) pra dois jobs não pegarem o mesmo.
+# próxima hora) e reserva (sql/026) pra dois jobs não pegarem o mesmo.
 TAMANHO_LOTE = 20
 MAX_POR_RODADA = 120
 TEMPO_MAXIMO_SEGUNDOS = 12 * 60   # o workflow tem 30 min; sobra pro resto

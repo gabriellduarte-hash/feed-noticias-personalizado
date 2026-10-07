@@ -1,0 +1,578 @@
+# Mapa de fontes em inglês (07/10): EUA, Reino Unido, Canadá, Austrália e
+# veículos internacionais, a partir de um levantamento feito com o
+# ChatGPT, revisado. Entram só no mapa do catálogo (sql/031): são
+# coletadas quando alguém segue. O resumo da IA sai em português.
+#
+# Organização pro leitor brasileiro: veículo de notícia geral de fora vai
+# em "Mundo", com o país na região; os temáticos vão no tema (TechCrunch
+# em Tecnologia, Variety em Entretenimento). IA e segurança ficam em
+# Tecnologia; games em Entretenimento; clima e energia em Meio ambiente.
+#
+# Formato: Categoria | URL do site ou do feed | Nome | Região | Idioma
+# Rodar: python catalogo/catalogar.py --candidatos catalogo/veiculos-en.txt --idioma en --rotulo ingles
+
+# --- Mundo: agências e grandes veículos ---
+Mundo | https://apnews.com | Associated Press | EUA
+Mundo | https://www.reuters.com | Reuters | Internacional
+Mundo | https://rss.upi.com/news/top_news.rss | UPI | EUA
+Mundo | https://www.afp.com/en | AFP | Internacional
+Mundo | https://www.aa.com.tr/en | Anadolu Agency | Turquia
+Mundo | https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml | The New York Times | EUA
+Mundo | https://rss.nytimes.com/services/xml/rss/nyt/World.xml | The New York Times – World | EUA
+Mundo | https://feeds.washingtonpost.com/rss/world | The Washington Post – World | EUA
+Mundo | https://feeds.washingtonpost.com/rss/national | The Washington Post – National | EUA
+Mundo | https://feeds.a.dj.com/rss/RSSWorldNews.xml | The Wall Street Journal | EUA
+Mundo | http://rss.cnn.com/rss/edition.rss | CNN | EUA
+Mundo | https://feeds.nbcnews.com/nbcnews/public/news | NBC News | EUA
+Mundo | https://abcnews.go.com/abcnews/topstories | ABC News | EUA
+Mundo | https://www.cbsnews.com/latest/rss/main | CBS News | EUA
+Mundo | https://feeds.npr.org/1001/rss.xml | NPR | EUA
+Mundo | https://www.pbs.org/newshour/feeds/rss/headlines | PBS NewsHour | EUA
+Mundo | https://www.usatoday.com | USA Today | EUA
+Mundo | https://moxie.foxnews.com/google-publisher/latest.xml | Fox News | EUA
+Mundo | https://www.msnbc.com/feeds/latest | MSNBC | EUA
+Mundo | https://www.newsweek.com/rss | Newsweek | EUA
+Mundo | https://time.com/feed/ | TIME | EUA
+Mundo | https://www.theatlantic.com/feed/all/ | The Atlantic | EUA
+Mundo | https://news.yahoo.com/rss | Yahoo News | EUA
+Mundo | https://www.huffpost.com/section/front-page/feed | HuffPost | EUA
+Mundo | https://www.thedailybeast.com | The Daily Beast | EUA
+Mundo | https://rss.csmonitor.com/feeds/all | The Christian Science Monitor | EUA
+Mundo | https://www.semafor.com | Semafor | EUA
+Mundo | https://feeds.bbci.co.uk/news/rss.xml | BBC News | Reino Unido
+Mundo | https://feeds.bbci.co.uk/news/world/rss.xml | BBC News – World | Reino Unido
+Mundo | https://www.theguardian.com/international/rss | The Guardian | Reino Unido
+Mundo | https://www.economist.com/latest/rss.xml | The Economist | Reino Unido
+Mundo | https://feeds.skynews.com/feeds/rss/home.xml | Sky News | Reino Unido
+Mundo | https://www.independent.co.uk/news/rss | The Independent | Reino Unido
+Mundo | https://www.telegraph.co.uk/rss.xml | The Telegraph | Reino Unido
+Mundo | https://www.thetimes.com | The Times | Reino Unido
+Mundo | https://www.dailymail.co.uk/articles.rss | Daily Mail | Reino Unido
+Mundo | https://www.mirror.co.uk/news/?service=rss | Daily Mirror | Reino Unido
+Mundo | https://www.thesun.co.uk/feed/ | The Sun | Reino Unido
+Mundo | https://www.standard.co.uk/rss | Evening Standard | Reino Unido
+Mundo | https://www.spectator.co.uk/feed | The Spectator | Reino Unido
+Mundo | https://www.newstatesman.com/feed | New Statesman | Reino Unido
+Mundo | https://www.prospectmagazine.co.uk | Prospect | Reino Unido
+Mundo | https://inews.co.uk/feed | The i Paper | Reino Unido
+Mundo | https://unherd.com/feed/ | UnHerd | Reino Unido
+Mundo | https://www.aljazeera.com/xml/rss/all.xml | Al Jazeera English | Catar
+Mundo | https://rss.dw.com/rdf/rss-en-all | Deutsche Welle | Alemanha
+Mundo | https://www.france24.com/en/rss | France 24 | França
+Mundo | https://www.euronews.com/rss | Euronews | Europa
+Mundo | https://www.politico.eu/feed/ | Politico Europe | Europa
+Mundo | https://www.rferl.org | Radio Free Europe/Radio Liberty | Europa
+
+# --- Mundo: geopolítica e análise ---
+Mundo | https://www.foreignaffairs.com/rss.xml | Foreign Affairs | EUA
+Mundo | https://foreignpolicy.com/feed/ | Foreign Policy | EUA
+Mundo | https://thediplomat.com/feed/ | The Diplomat | Ásia
+Mundo | https://responsiblestatecraft.org/feed/ | Responsible Statecraft | EUA
+Mundo | https://warontherocks.com/feed/ | War on the Rocks | EUA
+Mundo | https://www.defensenews.com | Defense News | EUA
+Mundo | https://breakingdefense.com/feed/ | Breaking Defense | EUA
+Mundo | https://www.twz.com | The War Zone | EUA
+Mundo | https://www.understandingwar.org | Institute for the Study of War | EUA
+Mundo | https://www.crisisgroup.org | Crisis Group | Internacional
+Mundo | https://www.cfr.org | Council on Foreign Relations | EUA
+Mundo | https://www.brookings.edu/feed/ | Brookings | EUA
+Mundo | https://carnegieendowment.org | Carnegie Endowment | EUA
+Mundo | https://www.csis.org | CSIS | EUA
+Mundo | https://www.atlanticcouncil.org/feed/ | Atlantic Council | EUA
+Mundo | https://www.rand.org | RAND | EUA
+
+# --- Mundo: Ásia, Oriente Médio, Europa do Leste, África, Índia ---
+Mundo | https://www.scmp.com/rss/91/feed | South China Morning Post | China
+Mundo | https://www.chinadaily.com.cn | China Daily | China
+Mundo | https://www.sixthtone.com | Sixth Tone | China
+Mundo | https://www.caixinglobal.com | Caixin Global | China
+Mundo | https://www.chinafile.com | ChinaFile | China
+Mundo | https://asia.nikkei.com | Nikkei Asia | Japão
+Mundo | https://www.japantimes.co.jp/feed/ | The Japan Times | Japão
+Mundo | https://www.koreaherald.com | The Korea Herald | Coreia do Sul
+Mundo | https://www.koreatimes.co.kr | The Korea Times | Coreia do Sul
+Mundo | https://www.straitstimes.com | The Straits Times | Singapura
+Mundo | https://www.channelnewsasia.com | CNA | Singapura
+Mundo | https://www.bangkokpost.com | Bangkok Post | Tailândia
+Mundo | https://kyivindependent.com/rss/ | The Kyiv Independent | Ucrânia
+Mundo | https://www.kyivpost.com | Kyiv Post | Ucrânia
+Mundo | https://meduza.io/rss/en/all | Meduza | Rússia
+Mundo | https://www.themoscowtimes.com/rss/news | The Moscow Times | Rússia
+Mundo | https://www.timesofisrael.com/feed/ | The Times of Israel | Israel
+Mundo | https://www.jpost.com | The Jerusalem Post | Israel
+Mundo | https://www.haaretz.com | Haaretz | Israel
+Mundo | https://www.middleeasteye.net/rss | Middle East Eye | Oriente Médio
+Mundo | https://www.middleeastmonitor.com/feed/ | Middle East Monitor | Oriente Médio
+Mundo | https://www.al-monitor.com | Al-Monitor | Oriente Médio
+Mundo | https://www.thenationalnews.com | The National | Emirados Árabes
+Mundo | https://www.arabnews.com | Arab News | Arábia Saudita
+Mundo | https://www.newarab.com | The New Arab | Oriente Médio
+Mundo | https://africacheck.org | Africa Check | África
+Mundo | https://www.dailymaverick.co.za | Daily Maverick | África do Sul
+Mundo | https://www.news24.com | News24 | África do Sul
+Mundo | https://mg.co.za/feed/ | Mail & Guardian | África do Sul
+Mundo | https://www.theafricareport.com | The Africa Report | África
+Mundo | https://africanarguments.org/feed/ | African Arguments | África
+Mundo | https://www.premiumtimesng.com/feed | Premium Times | Nigéria
+Mundo | https://www.thehindu.com/news/feeder/default.rss | The Hindu | Índia
+Mundo | https://www.hindustantimes.com | Hindustan Times | Índia
+Mundo | https://timesofindia.indiatimes.com/rssfeedstopstories.cms | Times of India | Índia
+Mundo | https://indianexpress.com/feed/ | The Indian Express | Índia
+Mundo | https://www.indiatoday.in/rss/home | India Today | Índia
+Mundo | https://feeds.feedburner.com/ndtvnews-top-stories | NDTV | Índia
+Mundo | https://theprint.in/feed/ | ThePrint | Índia
+Mundo | https://scroll.in | Scroll.in | Índia
+Mundo | https://thewire.in | The Wire | Índia
+Mundo | https://www.firstpost.com | Firstpost | Índia
+
+# --- Mundo: Canadá e Austrália ---
+Mundo | https://www.cbc.ca/webfeed/rss/rss-topstories | CBC News | Canadá
+Mundo | https://www.ctvnews.ca | CTV News | Canadá
+Mundo | https://globalnews.ca/feed/ | Global News | Canadá
+Mundo | https://www.thestar.com | Toronto Star | Canadá
+Mundo | https://www.theglobeandmail.com | The Globe and Mail | Canadá
+Mundo | https://nationalpost.com/feed/ | National Post | Canadá
+Mundo | https://montrealgazette.com/feed/ | Montreal Gazette | Canadá
+Mundo | https://vancouversun.com/feed/ | Vancouver Sun | Canadá
+Mundo | https://calgaryherald.com/feed/ | Calgary Herald | Canadá
+Mundo | https://ottawacitizen.com/feed/ | Ottawa Citizen | Canadá
+Mundo | https://macleans.ca/feed/ | Maclean's | Canadá
+Mundo | https://toronto.citynews.ca | CityNews | Canadá
+Mundo | https://www.abc.net.au/news/feed/51120/rss.xml | ABC News Australia | Austrália
+Mundo | https://www.smh.com.au/rss/feed.xml | The Sydney Morning Herald | Austrália
+Mundo | https://www.theage.com.au/rss/feed.xml | The Age | Austrália
+Mundo | https://www.theaustralian.com.au | The Australian | Austrália
+Mundo | https://www.news.com.au | news.com.au | Austrália
+Mundo | https://www.sbs.com.au/news | SBS News | Austrália
+Mundo | https://www.theguardian.com/australia-news/rss | Guardian Australia | Austrália
+Mundo | https://www.crikey.com.au/feed/ | Crikey | Austrália
+Mundo | https://www.canberratimes.com.au | The Canberra Times | Austrália
+Mundo | https://www.brisbanetimes.com.au/rss/feed.xml | Brisbane Times | Austrália
+Mundo | https://www.watoday.com.au/rss/feed.xml | WAtoday | Austrália
+
+# --- Mundo: jornais e regionais dos EUA ---
+Mundo | https://www.latimes.com | Los Angeles Times | Los Angeles (EUA)
+Mundo | https://www.chicagotribune.com | Chicago Tribune | Chicago (EUA)
+Mundo | https://www.bostonglobe.com | The Boston Globe | Boston (EUA)
+Mundo | https://www.sfchronicle.com | San Francisco Chronicle | São Francisco (EUA)
+Mundo | https://nypost.com/feed/ | New York Post | Nova York (EUA)
+Mundo | https://www.nydailynews.com | New York Daily News | Nova York (EUA)
+Mundo | https://www.washingtontimes.com/rss/headlines/news/ | The Washington Times | Washington (EUA)
+Mundo | https://www.inquirer.com | The Philadelphia Inquirer | Filadélfia (EUA)
+Mundo | https://www.seattletimes.com/feed/ | The Seattle Times | Seattle (EUA)
+Mundo | https://www.dallasnews.com | The Dallas Morning News | Texas (EUA)
+Mundo | https://www.houstonchronicle.com | Houston Chronicle | Texas (EUA)
+Mundo | https://www.miamiherald.com | Miami Herald | Flórida (EUA)
+Mundo | https://www.tampabay.com | Tampa Bay Times | Flórida (EUA)
+Mundo | https://www.denverpost.com/feed/ | The Denver Post | Colorado (EUA)
+Mundo | https://www.azcentral.com | The Arizona Republic | Arizona (EUA)
+Mundo | https://www.startribune.com | Star Tribune | Minnesota (EUA)
+Mundo | https://www.freep.com | Detroit Free Press | Michigan (EUA)
+Mundo | https://www.post-gazette.com | Pittsburgh Post-Gazette | Pensilvânia (EUA)
+Mundo | https://www.mercurynews.com/feed/ | The Mercury News | Califórnia (EUA)
+Mundo | https://www.ocregister.com/feed/ | Orange County Register | Califórnia (EUA)
+Mundo | https://gothamist.com | Gothamist | Nova York (EUA)
+Mundo | https://www.amny.com/feed/ | amNY | Nova York (EUA)
+Mundo | https://www.thecity.nyc | The City | Nova York (EUA)
+Mundo | https://laist.com | LAist | Los Angeles (EUA)
+Mundo | https://www.dailynews.com/feed/ | Los Angeles Daily News | Los Angeles (EUA)
+Mundo | https://www.sfgate.com | SFGATE | São Francisco (EUA)
+Mundo | https://sfstandard.com | The San Francisco Standard | São Francisco (EUA)
+Mundo | https://missionlocal.org/feed/ | Mission Local | São Francisco (EUA)
+Mundo | https://www.kqed.org/news | KQED | São Francisco (EUA)
+Mundo | https://www.berkeleyside.org | Berkeleyside | Califórnia (EUA)
+Mundo | https://wtop.com/feed/ | WTOP | Washington (EUA)
+Mundo | https://washingtoncitypaper.com/feed/ | Washington City Paper | Washington (EUA)
+Mundo | https://chicago.suntimes.com | Chicago Sun-Times | Chicago (EUA)
+Mundo | https://blockclubchicago.org/feed/ | Block Club Chicago | Chicago (EUA)
+Mundo | https://www.wbez.org | WBEZ | Chicago (EUA)
+Mundo | https://www.boston.com/feed/ | Boston.com | Boston (EUA)
+Mundo | https://www.wbur.org | WBUR | Boston (EUA)
+Mundo | https://www.texastribune.org/feeds/latest/ | The Texas Tribune | Texas (EUA)
+Mundo | https://www.texasmonthly.com/feed/ | Texas Monthly | Texas (EUA)
+Mundo | https://www.houstonpublicmedia.org | Houston Public Media | Texas (EUA)
+Mundo | https://floridapolitics.com/feed/ | Florida Politics | Flórida (EUA)
+Mundo | https://floridaphoenix.com/feed/ | Florida Phoenix | Flórida (EUA)
+Mundo | https://www.wlrn.org | WLRN | Flórida (EUA)
+Mundo | https://coloradosun.com/feed/ | The Colorado Sun | Colorado (EUA)
+Mundo | https://denverite.com/feed/ | Denverite | Colorado (EUA)
+Mundo | https://azmirror.com/feed/ | Arizona Mirror | Arizona (EUA)
+Mundo | https://whyy.org | WHYY | Pensilvânia (EUA)
+Mundo | https://billypenn.com/feed/ | Billy Penn | Pensilvânia (EUA)
+Mundo | https://www.spotlightpa.org | Spotlight PA | Pensilvânia (EUA)
+Mundo | https://calmatters.org/feed/ | CalMatters | Califórnia (EUA)
+Mundo | https://vtdigger.org/feed/ | VTDigger | Vermont (EUA)
+Mundo | https://mississippitoday.org/feed/ | Mississippi Today | Mississippi (EUA)
+Mundo | https://www.minnpost.com/feed/ | MinnPost | Minnesota (EUA)
+
+# --- Política (EUA) ---
+Política | https://rss.politico.com/politics-news.xml | Politico | EUA
+Política | https://api.axios.com/feed/ | Axios | EUA
+Política | https://thehill.com/feed/ | The Hill | EUA
+Política | https://rollcall.com/feed/ | Roll Call | EUA
+Política | https://talkingpointsmemo.com/feed | Talking Points Memo | EUA
+Política | https://prospect.org | The American Prospect | EUA
+Política | https://www.realclearpolitics.com | RealClearPolitics | EUA
+Política | https://www.cookpolitical.com | The Cook Political Report | EUA
+Política | https://www.nationalreview.com/feed/ | National Review | EUA
+Política | https://www.theamericanconservative.com/feed/ | The American Conservative | EUA
+Política | https://dailycaller.com/feed/ | The Daily Caller | EUA
+Política | https://feeds.feedburner.com/breitbart | Breitbart | EUA
+Política | https://www.dailywire.com | The Daily Wire | EUA
+Política | https://thefederalist.com/feed/ | The Federalist | EUA
+Política | https://newrepublic.com/rss.xml | The New Republic | EUA
+Política | https://www.motherjones.com/feed/ | Mother Jones | EUA
+Política | https://www.thenation.com/feed/?post_type=article | The Nation | EUA
+Política | https://slate.com/feeds/all.rss | Slate | EUA
+Política | https://www.vox.com/rss/index.xml | Vox | EUA
+Política | https://nymag.com/intelligencer/ | New York Magazine – Intelligencer | EUA
+Política | https://reason.com/feed/ | Reason | EUA
+Política | https://jacobin.com/feed/ | Jacobin | EUA
+Política | https://www.democracynow.org/democracynow.rss | Democracy Now! | EUA
+Política | https://news.gallup.com | Gallup | EUA
+Política | https://www.pewresearch.org/feed/ | Pew Research Center | EUA
+Política | https://www.cato.org | Cato Institute | EUA
+Política | https://www.heritage.org | Heritage Foundation | EUA
+Política | https://www.americanprogress.org | Center for American Progress | EUA
+Política | https://www.aei.org | AEI | EUA
+Política | https://www.brennancenter.org | Brennan Center | EUA
+Política | https://www.urban.org | Urban Institute | EUA
+
+# --- Investigação (EUA e internacional) ---
+Política | https://www.propublica.org/feeds/propublica/main | ProPublica | EUA
+Política | https://theintercept.com/feed/?rss | The Intercept | EUA
+Política | https://www.themarshallproject.org/rss/recent | The Marshall Project | EUA
+Política | https://publicintegrity.org/feed/ | Center for Public Integrity | EUA
+Política | https://www.icij.org/feed/ | ICIJ | Internacional
+Política | https://www.occrp.org/en | OCCRP | Internacional
+Política | https://www.bellingcat.com/feed/ | Bellingcat | Internacional
+Política | https://revealnews.org/feed/ | Reveal | EUA
+Política | https://www.thebureauinvestigates.com | The Bureau of Investigative Journalism | Reino Unido
+Política | https://www.opensecrets.org/news/feed/ | OpenSecrets | EUA
+Política | https://www.muckrock.com/news/feeds/ | MuckRock | EUA
+Política | https://documentedny.com/feed/ | Documented | Nova York (EUA)
+
+# --- Finanças ---
+Finanças | https://www.bloomberg.com | Bloomberg | EUA
+Finanças | https://www.ft.com/rss/home | Financial Times | Reino Unido
+Finanças | https://www.cnbc.com/id/100003114/device/rss/rss.html | CNBC | EUA
+Finanças | https://feeds.content.dowjones.io/public/rss/mw_topstories | MarketWatch | EUA
+Finanças | https://www.forbes.com/business/feed/ | Forbes | EUA
+Finanças | https://fortune.com/feed/ | Fortune | EUA
+Finanças | https://feeds.businessinsider.com/custom/all | Business Insider | EUA
+Finanças | https://www.barrons.com | Barron's | EUA
+Finanças | https://finance.yahoo.com/news/rssindex | Yahoo Finance | EUA
+Finanças | https://qz.com/rss | Quartz | EUA
+Finanças | https://www.fastcompany.com/latest/rss | Fast Company | EUA
+Finanças | https://www.inc.com/rss/ | Inc. | EUA
+Finanças | https://www.entrepreneur.com/latest.rss | Entrepreneur | EUA
+Finanças | https://www.americanbanker.com | American Banker | EUA
+Finanças | https://www.theinformation.com | The Information | EUA
+Finanças | https://www.cfodive.com/feeds/news/ | CFO Dive | EUA
+Finanças | https://www.bankingdive.com/feeds/news/ | Banking Dive | EUA
+Finanças | https://www.paymentsdive.com/feeds/news/ | Payments Dive | EUA
+Finanças | https://www.retaildive.com/feeds/news/ | Retail Dive | EUA
+Finanças | https://www.supplychaindive.com/feeds/news/ | Supply Chain Dive | EUA
+Finanças | https://www.constructiondive.com/feeds/news/ | Construction Dive | EUA
+Finanças | https://www.restaurantbusinessonline.com | Restaurant Business | EUA
+Finanças | https://seekingalpha.com/market_currents.xml | Seeking Alpha | EUA
+Finanças | https://www.fool.com/feeds/index.aspx | The Motley Fool | EUA
+Finanças | https://www.kiplinger.com/feed/all | Kiplinger | EUA
+Finanças | https://www.investors.com/feed/ | Investor's Business Daily | EUA
+Finanças | https://www.benzinga.com/feed | Benzinga | EUA
+Finanças | https://www.investing.com/rss/news.rss | Investing.com | Internacional
+Finanças | https://www.nasdaq.com/feed/rssoutbound?category=Markets | Nasdaq | EUA
+Finanças | https://hbr.org | Harvard Business Review | EUA
+Finanças | https://sloanreview.mit.edu/feed/ | MIT Sloan Management Review | EUA
+Finanças | https://www.cityam.com/feed/ | City A.M. | Reino Unido
+Finanças | https://financialpost.com/feed/ | Financial Post | Canadá
+Finanças | https://www.afr.com | Australian Financial Review | Austrália
+Finanças | https://www.smartcompany.com.au/feed/ | SmartCompany | Austrália
+Finanças | https://economictimes.indiatimes.com/rssfeedsdefault.cms | The Economic Times | Índia
+Finanças | https://www.business-standard.com | Business Standard | Índia
+Finanças | https://www.livemint.com/rss/news | Mint | Índia
+Finanças | https://www.moneycontrol.com | Moneycontrol | Índia
+Finanças | https://www.federalreserve.gov/feeds/press_all.xml | Federal Reserve | EUA
+Finanças | https://www.bls.gov/feed/bls_latest.rss | Bureau of Labor Statistics | EUA
+Finanças | https://www.sec.gov/news/pressreleases.rss | SEC | EUA
+Finanças | https://www.piie.com | Peterson Institute (PIIE) | EUA
+Finanças | https://taxfoundation.org/feed/ | Tax Foundation | EUA
+Finanças | https://www.epi.org/feed/ | Economic Policy Institute | EUA
+
+# --- Tecnologia ---
+Tecnologia | https://www.theverge.com/rss/index.xml | The Verge | EUA
+Tecnologia | https://techcrunch.com/feed/ | TechCrunch | EUA
+Tecnologia | https://www.wired.com/feed/rss | Wired | EUA
+Tecnologia | https://feeds.arstechnica.com/arstechnica/index | Ars Technica | EUA
+Tecnologia | https://www.engadget.com/rss.xml | Engadget | EUA
+Tecnologia | https://www.cnet.com/rss/news/ | CNET | EUA
+Tecnologia | https://www.zdnet.com/news/rss.xml | ZDNET | EUA
+Tecnologia | https://www.techradar.com/rss | TechRadar | Reino Unido
+Tecnologia | https://gizmodo.com/rss | Gizmodo | EUA
+Tecnologia | https://mashable.com/feeds/rss/all | Mashable | EUA
+Tecnologia | https://venturebeat.com/feed/ | VentureBeat | EUA
+Tecnologia | https://www.digitaltrends.com/feed/ | Digital Trends | EUA
+Tecnologia | https://www.pcmag.com/feeds/rss/latest | PCMag | EUA
+Tecnologia | https://www.tomshardware.com/feeds/all | Tom's Hardware | EUA
+Tecnologia | https://www.tomsguide.com/feeds/all | Tom's Guide | EUA
+Tecnologia | https://lifehacker.com/feed/rss | Lifehacker | EUA
+Tecnologia | https://www.theregister.com/headlines.atom | The Register | Reino Unido
+Tecnologia | https://www.extremetech.com/feed | ExtremeTech | EUA
+Tecnologia | https://www.makeuseof.com/feed/ | MakeUseOf | EUA
+Tecnologia | https://restofworld.org/feed/latest | Rest of World | Internacional
+Tecnologia | https://www.404media.co/rss/ | 404 Media | EUA
+Tecnologia | https://themarkup.org/feeds/rss.xml | The Markup | EUA
+Tecnologia | https://sifted.eu/feed | Sifted | Europa
+Tecnologia | https://news.crunchbase.com/feed/ | Crunchbase News | EUA
+Tecnologia | https://strictlyvc.com/feed/ | StrictlyVC | EUA
+Tecnologia | https://www.geekwire.com/feed/ | GeekWire | Seattle (EUA)
+Tecnologia | https://tech.eu/feed/ | Tech.eu | Europa
+Tecnologia | https://betakit.com/feed/ | BetaKit | Canadá
+Tecnologia | https://inc42.com/feed/ | Inc42 | Índia
+Tecnologia | https://yourstory.com | YourStory | Índia
+Tecnologia | https://www.infoworld.com | InfoWorld | EUA
+Tecnologia | https://www.cio.com/feed/ | CIO | EUA
+Tecnologia | https://www.computerworld.com/feed/ | Computerworld | EUA
+Tecnologia | https://www.informationweek.com | InformationWeek | EUA
+Tecnologia | https://siliconangle.com/feed/ | SiliconANGLE | EUA
+Tecnologia | https://thenewstack.io/feed/ | The New Stack | EUA
+Tecnologia | https://devops.com/feed/ | DevOps.com | EUA
+Tecnologia | https://9to5mac.com/feed/ | 9to5Mac | EUA
+Tecnologia | https://feeds.macrumors.com/MacRumors-All | MacRumors | EUA
+Tecnologia | https://appleinsider.com/rss/news/ | AppleInsider | EUA
+Tecnologia | https://www.cultofmac.com/feed/ | Cult of Mac | EUA
+Tecnologia | https://9to5google.com/feed/ | 9to5Google | EUA
+Tecnologia | https://www.androidauthority.com/feed/ | Android Authority | EUA
+Tecnologia | https://www.androidcentral.com/feed | Android Central | EUA
+Tecnologia | https://www.androidpolice.com/feed/ | Android Police | EUA
+Tecnologia | https://www.xda-developers.com/feed/ | XDA Developers | EUA
+Tecnologia | https://www.windowscentral.com/feed | Windows Central | EUA
+Tecnologia | https://www.neowin.net/news/rss/ | Neowin | EUA
+Tecnologia | https://www.thurrott.com/feed | Thurrott | EUA
+Tecnologia | https://www.technologyreview.com/feed/ | MIT Technology Review | EUA
+Tecnologia | https://spectrum.ieee.org/feeds/feed.rss | IEEE Spectrum | EUA
+Tecnologia | https://the-decoder.com/feed/ | The Decoder | Alemanha
+Tecnologia | https://www.artificialintelligence-news.com/feed/ | AI News | Reino Unido
+Tecnologia | https://www.marktechpost.com/feed/ | MarkTechPost | EUA
+Tecnologia | https://importai.substack.com/feed | Import AI | EUA
+Tecnologia | https://www.bensbites.com | Ben's Bites | Reino Unido
+Tecnologia | https://www.therundown.ai | The Rundown AI | EUA
+Tecnologia | https://www.deeplearning.ai/the-batch/ | The Batch | EUA
+Tecnologia | https://huggingface.co/blog/feed.xml | Hugging Face Blog | Internacional
+Tecnologia | https://openai.com/news/rss.xml | OpenAI News | EUA
+Tecnologia | https://blog.google/technology/ai/rss/ | Google AI Blog | EUA
+Tecnologia | https://deepmind.google/blog/rss.xml | Google DeepMind | Reino Unido
+Tecnologia | https://blogs.microsoft.com/ai/feed/ | Microsoft AI Blog | EUA
+Tecnologia | https://ai.meta.com/blog/ | Meta AI | EUA
+Tecnologia | https://blogs.nvidia.com/feed/ | NVIDIA Blog | EUA
+Tecnologia | https://www.anthropic.com/news | Anthropic News | EUA
+Tecnologia | https://aws.amazon.com/blogs/machine-learning/feed/ | AWS Machine Learning Blog | EUA
+Tecnologia | https://krebsonsecurity.com/feed/ | KrebsOnSecurity | EUA
+Tecnologia | https://www.bleepingcomputer.com/feed/ | BleepingComputer | EUA
+Tecnologia | https://therecord.media/feed/ | The Record | EUA
+Tecnologia | https://www.darkreading.com/rss.xml | Dark Reading | EUA
+Tecnologia | https://www.securityweek.com/feed/ | SecurityWeek | EUA
+Tecnologia | https://cyberscoop.com/feed/ | CyberScoop | EUA
+Tecnologia | https://www.scworld.com | SC Media | EUA
+Tecnologia | https://www.csoonline.com/feed/ | CSO Online | EUA
+Tecnologia | https://feeds.feedburner.com/TheHackersNews | The Hacker News | Internacional
+Tecnologia | https://www.microsoft.com/en-us/security/blog/feed/ | Microsoft Security Blog | EUA
+Tecnologia | https://security.googleblog.com/feeds/posts/default | Google Security Blog | EUA
+Tecnologia | https://googleprojectzero.blogspot.com/feeds/posts/default | Google Project Zero | EUA
+Tecnologia | https://blog.talosintelligence.com/rss/ | Cisco Talos | EUA
+Tecnologia | https://unit42.paloaltonetworks.com/feed/ | Palo Alto Networks Unit 42 | EUA
+Tecnologia | https://blog.cloudflare.com/rss/ | Cloudflare Blog | EUA
+Tecnologia | https://isc.sans.edu/rssfeed.xml | SANS Internet Storm Center | EUA
+Tecnologia | https://www.cisa.gov/news-events/news | CISA | EUA
+
+# --- Ciência ---
+Ciência | https://www.scientificamerican.com | Scientific American | EUA
+Ciência | https://www.science.org/rss/news_current.xml | Science | EUA
+Ciência | https://www.nature.com/nature.rss | Nature | Reino Unido
+Ciência | https://www.newscientist.com/feed/home/ | New Scientist | Reino Unido
+Ciência | https://www.popsci.com/feed/ | Popular Science | EUA
+Ciência | https://www.smithsonianmag.com/rss/latest_articles/ | Smithsonian Magazine | EUA
+Ciência | https://www.nationalgeographic.com | National Geographic | EUA
+Ciência | https://www.sciencenews.org/feed | Science News | EUA
+Ciência | https://www.livescience.com/feeds/all | Live Science | EUA
+Ciência | https://phys.org/rss-feed/ | Phys.org | Internacional
+Ciência | https://www.eurekalert.org | EurekAlert! | EUA
+Ciência | https://theconversation.com/us/articles.atom | The Conversation | Internacional
+Ciência | https://www.quantamagazine.org/feed/ | Quanta Magazine | EUA
+Ciência | https://www.nasa.gov/news-release/feed/ | NASA | EUA
+Ciência | https://www.space.com/feeds/all | Space.com | EUA
+Ciência | https://spacenews.com/feed/ | SpaceNews | EUA
+Ciência | https://www.universetoday.com/feed/ | Universe Today | Internacional
+Ciência | https://skyandtelescope.org/feed/ | Sky & Telescope | EUA
+Ciência | https://www.esa.int/rssfeed/Our_Activities/Space_News | European Space Agency | Europa
+Ciência | https://www.jpl.nasa.gov/feeds/news/ | NASA JPL | EUA
+Ciência | https://physicsworld.com/feed/ | Physics World | Reino Unido
+Ciência | https://home.cern | CERN | Europa
+Ciência | https://www.symmetrymagazine.org/feed | Symmetry Magazine | EUA
+Ciência | https://www.sciencedaily.com/rss/all.xml | ScienceDaily | EUA
+Ciência | https://newatlas.com/index.rss | New Atlas | Internacional
+Ciência | https://nautil.us/feed/ | Nautilus | EUA
+Ciência | https://www.psypost.org/feed/ | PsyPost | EUA
+Ciência | https://greatergood.berkeley.edu | Greater Good Magazine | EUA
+Ciência | https://www.noaa.gov/news | NOAA | EUA
+
+# --- Saúde ---
+Saúde | https://www.statnews.com/feed/ | STAT | EUA
+Saúde | https://kffhealthnews.org/feed/ | KFF Health News | EUA
+Saúde | https://feeds.npr.org/1128/rss.xml | NPR Health | EUA
+Saúde | https://www.webmd.com | WebMD | EUA
+Saúde | https://www.medicalnewstoday.com | Medical News Today | EUA
+Saúde | https://www.medpagetoday.com/rss/headlines.xml | MedPage Today | EUA
+Saúde | https://www.fiercehealthcare.com/rss/xml | Fierce Healthcare | EUA
+Saúde | https://www.modernhealthcare.com | Modern Healthcare | EUA
+Saúde | https://www.healthcaredive.com/feeds/news/ | Healthcare Dive | EUA
+Saúde | https://medicalxpress.com/rss-feed/ | Medical Xpress | Internacional
+Saúde | https://www.health.harvard.edu/blog/feed | Harvard Health | EUA
+Saúde | https://newsnetwork.mayoclinic.org/feed/ | Mayo Clinic News Network | EUA
+Saúde | https://www.nih.gov/news-events/news-releases | NIH | EUA
+Saúde | https://www.cdc.gov/media/releases/ | CDC | EUA
+Saúde | https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml | FDA | EUA
+Saúde | https://www.who.int/rss-feeds/news-english.xml | Organização Mundial da Saúde | Internacional
+Saúde | https://www.psychologytoday.com/us | Psychology Today | EUA
+
+# --- Meio ambiente (clima e energia) ---
+Meio ambiente | https://insideclimatenews.org/feed/ | Inside Climate News | EUA
+Meio ambiente | https://www.climatecentral.org | Climate Central | EUA
+Meio ambiente | https://grist.org/feed/ | Grist | EUA
+Meio ambiente | https://www.carbonbrief.org/feed/ | Carbon Brief | Reino Unido
+Meio ambiente | https://www.canarymedia.com | Canary Media | EUA
+Meio ambiente | https://www.climatechangenews.com/feed/ | Climate Home News | Reino Unido
+Meio ambiente | https://news.mongabay.com/feed/ | Mongabay | Internacional
+Meio ambiente | https://yaleclimateconnections.org/feed/ | Yale Climate Connections | EUA
+Meio ambiente | https://www.theguardian.com/environment/rss | The Guardian – Environment | Reino Unido
+Meio ambiente | https://earth.org/feed/ | Earth.org | Internacional
+Meio ambiente | https://www.ecowatch.com | EcoWatch | EUA
+Meio ambiente | https://www.treehugger.com | Treehugger | EUA
+Meio ambiente | https://cleantechnica.com/feed/ | CleanTechnica | EUA
+Meio ambiente | https://heatmap.news | Heatmap | EUA
+Meio ambiente | https://thenarwhal.ca/feed/ | The Narwhal | Canadá
+Meio ambiente | https://www.utilitydive.com/feeds/news/ | Utility Dive | EUA
+Meio ambiente | https://www.pv-magazine.com/feed/ | PV Magazine | Internacional
+Meio ambiente | https://www.rechargenews.com | Recharge | Internacional
+Meio ambiente | https://www.rigzone.com | Rigzone | EUA
+Meio ambiente | https://www.ogj.com | Oil & Gas Journal | EUA
+Meio ambiente | https://www.world-nuclear-news.org | World Nuclear News | Internacional
+Meio ambiente | https://www.iea.org/news | IEA | Internacional
+Meio ambiente | https://www.eia.gov/rss/todayinenergy.xml | EIA | EUA
+
+# --- Automóveis ---
+Automóveis | https://www.motortrend.com/feed/ | MotorTrend | EUA
+Automóveis | https://www.caranddriver.com/rss/all.xml/ | Car and Driver | EUA
+Automóveis | https://www.roadandtrack.com/rss/all.xml/ | Road & Track | EUA
+Automóveis | https://www.autoblog.com/rss.xml | Autoblog | EUA
+Automóveis | https://jalopnik.com/rss | Jalopnik | EUA
+Automóveis | https://www.thedrive.com | The Drive | EUA
+Automóveis | https://www.autonews.com | Automotive News | EUA
+Automóveis | https://www.motor1.com/rss/news/all/ | Motor1 | Internacional
+Automóveis | https://www.topgear.com | Top Gear | Reino Unido
+Automóveis | https://www.autocar.co.uk/rss | Autocar | Reino Unido
+Automóveis | https://www.autoexpress.co.uk/feed/all | Auto Express | Reino Unido
+Automóveis | https://insideevs.com/rss/news/all/ | InsideEVs | EUA
+Automóveis | https://electrek.co/feed/ | Electrek | EUA
+Automóveis | https://www.teslarati.com/feed/ | Teslarati | EUA
+Automóveis | https://www.greencarreports.com | Green Car Reports | EUA
+
+# --- Entretenimento (cinema, TV, música, celebridades, games) ---
+Entretenimento | https://variety.com/feed/ | Variety | EUA
+Entretenimento | https://www.hollywoodreporter.com/feed/ | The Hollywood Reporter | EUA
+Entretenimento | https://deadline.com/feed/ | Deadline | EUA
+Entretenimento | https://ew.com | Entertainment Weekly | EUA
+Entretenimento | https://www.vulture.com/rss/index.xml | Vulture | EUA
+Entretenimento | https://www.indiewire.com/feed/ | IndieWire | EUA
+Entretenimento | https://www.thewrap.com/feed/ | TheWrap | EUA
+Entretenimento | https://collider.com/feed/ | Collider | EUA
+Entretenimento | https://screenrant.com/feed/ | Screen Rant | EUA
+Entretenimento | https://people.com | People | EUA
+Entretenimento | https://www.tmz.com/rss.xml | TMZ | EUA
+Entretenimento | https://www.eonline.com | E! News | EUA
+Entretenimento | https://www.rollingstone.com/feed/ | Rolling Stone | EUA
+Entretenimento | https://www.billboard.com/feed/ | Billboard | EUA
+Entretenimento | https://pitchfork.com/feed/feed-news/rss | Pitchfork | EUA
+Entretenimento | https://consequence.net/feed/ | Consequence | EUA
+Entretenimento | https://www.stereogum.com/feed/ | Stereogum | EUA
+Entretenimento | https://www.nme.com/feed | NME | Reino Unido
+Entretenimento | https://www.avclub.com/rss | The A.V. Club | EUA
+Entretenimento | https://www.empireonline.com | Empire | Reino Unido
+Entretenimento | https://www.rogerebert.com/feed | RogerEbert.com | EUA
+Entretenimento | https://www.slashfilm.com/feed/ | /Film | EUA
+Entretenimento | https://www.screendaily.com | Screen Daily | Reino Unido
+Entretenimento | https://www.spin.com/feed/ | Spin | EUA
+Entretenimento | https://www.brooklynvegan.com/feed/ | BrooklynVegan | EUA
+Entretenimento | https://www.thelineofbestfit.com | The Line of Best Fit | Reino Unido
+Entretenimento | https://daily.bandcamp.com/feed | Bandcamp Daily | EUA
+Entretenimento | https://ra.co | Resident Advisor | Internacional
+Entretenimento | https://djmag.com | DJ Mag | Reino Unido
+Entretenimento | https://www.musicbusinessworldwide.com/feed/ | Music Business Worldwide | Internacional
+Entretenimento | https://feeds.feedburner.com/ign/all | IGN | EUA
+Entretenimento | https://www.gamespot.com/feeds/mashup/ | GameSpot | EUA
+Entretenimento | https://www.polygon.com/rss/index.xml | Polygon | EUA
+Entretenimento | https://kotaku.com/rss | Kotaku | EUA
+Entretenimento | https://www.eurogamer.net/feed | Eurogamer | Reino Unido
+Entretenimento | https://www.pcgamer.com/rss/ | PC Gamer | EUA
+Entretenimento | https://www.gamesradar.com/rss/ | GamesRadar+ | Reino Unido
+Entretenimento | https://www.rockpapershotgun.com/feed | Rock Paper Shotgun | Reino Unido
+Entretenimento | https://www.destructoid.com/feed/ | Destructoid | EUA
+Entretenimento | https://www.nintendolife.com/feeds/latest | Nintendo Life | Reino Unido
+Entretenimento | https://www.pushsquare.com/feeds/latest | Push Square | Reino Unido
+Entretenimento | https://www.purexbox.com/feeds/latest | Pure Xbox | Reino Unido
+Entretenimento | https://blog.playstation.com/feed/ | PlayStation Blog | EUA
+Entretenimento | https://news.xbox.com/en-us/feed/ | Xbox Wire | EUA
+Entretenimento | https://www.pcgamesn.com/mainrss.xml | PCGamesN | Reino Unido
+Entretenimento | https://www.videogameschronicle.com/feed/ | Video Games Chronicle | Reino Unido
+Entretenimento | https://gameinformer.com | Game Informer | EUA
+Entretenimento | https://80.lv | 80 Level | Internacional
+
+# --- Esportes ---
+Esportes | https://www.espn.com/espn/rss/news | ESPN | EUA
+Esportes | https://www.espn.com/espn/rss/soccer/news | ESPN FC | EUA
+Esportes | https://www.cbssports.com/rss/headlines/ | CBS Sports | EUA
+Esportes | https://www.nbcsports.com | NBC Sports | EUA
+Esportes | https://www.foxsports.com | Fox Sports | EUA
+Esportes | https://www.si.com | Sports Illustrated | EUA
+Esportes | https://www.nytimes.com/athletic/ | The Athletic | EUA
+Esportes | https://bleacherreport.com | Bleacher Report | EUA
+Esportes | https://sports.yahoo.com/rss/ | Yahoo Sports | EUA
+Esportes | https://www.sbnation.com/rss/current | SB Nation | EUA
+Esportes | https://www.sportingnews.com/us | Sporting News | EUA
+Esportes | https://www.skysports.com/rss/12040 | Sky Sports | Reino Unido
+Esportes | https://feeds.bbci.co.uk/sport/rss.xml | BBC Sport | Reino Unido
+Esportes | https://www.theguardian.com/football/rss | The Guardian – Football | Reino Unido
+Esportes | https://www.mlssoccer.com | MLS | EUA
+Esportes | https://www.nba.com/news | NBA | EUA
+Esportes | https://hoopshype.com/feed/ | HoopsHype | EUA
+Esportes | https://www.nfl.com/news | NFL | EUA
+Esportes | https://profootballtalk.nbcsports.com/feed/ | Pro Football Talk | EUA
+Esportes | https://www.formula1.com/content/fom-website/en/latest/all.xml | Formula 1 | Internacional
+Esportes | https://www.autosport.com/rss/feed/all | Autosport | Reino Unido
+Esportes | https://www.motorsport.com/rss/all/news/ | Motorsport.com | Internacional
+Esportes | https://racingnews365.com | RacingNews365 | Internacional
+Esportes | https://www.the-race.com | The Race | Reino Unido
+Esportes | https://www.planetf1.com/feed/ | PlanetF1 | Reino Unido
+
+# --- Outros: cultura, ideias, comportamento, carreira e mídia ---
+Outros | https://www.newyorker.com/feed/everything | The New Yorker | EUA
+Outros | https://aeon.co/feed.rss | Aeon | Internacional
+Outros | https://psyche.co | Psyche | Internacional
+Outros | https://lithub.com/feed/ | Literary Hub | EUA
+Outros | https://www.theparisreview.org/blog/feed/ | The Paris Review | EUA
+Outros | https://longreads.com/feed/ | Longreads | EUA
+Outros | https://www.nybooks.com/feed/ | The New York Review of Books | EUA
+Outros | https://daily.jstor.org/feed/ | JSTOR Daily | EUA
+Outros | https://fs.blog/feed/ | Farnam Street | EUA
+Outros | https://behavioralscientist.org/feed/ | Behavioral Scientist | EUA
+Outros | https://www.niemanlab.org/feed/ | Nieman Journalism Lab | EUA
+Outros | https://www.poynter.org/feed/ | Poynter | EUA
+Outros | https://www.cjr.org/feed | Columbia Journalism Review | EUA
+Outros | https://pressgazette.co.uk/feed/ | Press Gazette | Reino Unido
+Outros | https://digiday.com/feed/ | Digiday | EUA
+Outros | https://www.mediaite.com/feed/ | Mediaite | EUA
+Outros | https://www.adweek.com/feed/ | Adweek | EUA
+Outros | https://adage.com | Ad Age | EUA
+Outros | https://reutersinstitute.politics.ox.ac.uk | Reuters Institute | Reino Unido
+Outros | https://www.themuse.com/advice | The Muse | EUA
+Outros | https://www.hrdive.com/feeds/news/ | HR Dive | EUA

@@ -1,8 +1,13 @@
 """
 Cataloga novas fontes pro "Seguir fontes" do hub.
 
+O catálogo é um mapa: as fontes catalogadas aqui NÃO são coletadas de
+hora em hora (feed_catalog.vitrine = false, sql/031). Só entram na coleta
+quando alguém segue a fonte (aí vira uma fonte normal, em sources).
+
 Fluxo:
-  1. Lê catalogo/candidatos.txt (categoria + URL de um site ou de um feed).
+  1. Lê catalogo/candidatos.txt (categoria + URL de um site ou de um feed,
+     e opcionalmente nome, região e idioma).
   2. Pra cada candidato, descobre o feed RSS/Atom:
        - a própria URL já é um feed? usa ela;
        - senão, procura <link rel="alternate" type="application/rss+xml"> no HTML;
@@ -18,13 +23,14 @@ Fluxo:
 
 Uso (da raiz do projeto, com o .venv ativo):
     python catalogo/catalogar.py
-    python catalogo/catalogar.py --candidatos outro_arquivo.txt
+    python catalogo/catalogar.py --candidatos catalogo/veiculos-en.txt --idioma en --rotulo ingles
 """
 import argparse
 import html
 import re
 import sys
-import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -37,15 +43,21 @@ import requests
 # também, então é melhor descobrir agora do que depois de catalogado.
 USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
 TIMEOUT_SEGUNDOS = 15
-PAUSA_ENTRE_SITES_SEGUNDOS = 1.0
+# Sites diferentes em paralelo (são centenas; um de cada vez levava horas).
+# Cada site ainda é visitado por uma conexão só, sem pressa.
+SITES_EM_PARALELO = 8
 MIN_ENTRADAS = 3
 MAX_DIAS_SEM_PUBLICAR = 45
 
-# Mesma lista fixa de resumo/resumir.py e do check constraint de articles.category
+# A lista fixa de resumo/resumir.py e do check constraint de articles.category,
+# mais três só do catálogo, pra organizar a descoberta: "Notícias" (veículos
+# de notícia geral), "Meio ambiente" e "Automóveis". A categoria de cada
+# notícia continua vindo da IA. Mesma lista em hub/src/lib/feed.ts.
 CATEGORIAS = [
-    "Tecnologia", "Finanças", "Humor", "Política", "Ciência",
-    "Saúde", "Esportes", "Entretenimento", "Mundo", "Outros",
+    "Notícias", "Política", "Finanças", "Tecnologia", "Ciência", "Meio ambiente",
+    "Saúde", "Esportes", "Entretenimento", "Automóveis", "Mundo", "Humor", "Outros",
 ]
+IDIOMAS = ("pt", "en")
 
 CAMINHOS_COMUNS = ["/feed", "/feed/", "/rss", "/rss/", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml"]
 TIPOS_FEED = ("application/rss+xml", "application/atom+xml", "application/feed+json", "application/xml", "text/xml")
@@ -58,11 +70,13 @@ from alternativas import entradas_do_site, ler_sitemap, sitemaps_do_robots, url_
 
 
 class Candidato:
-    def __init__(self, categoria, url, nome=None, linha=0):
+    def __init__(self, categoria, url, nome=None, linha=0, regiao=None, idioma="pt"):
         self.categoria = categoria
         self.url = url
         self.nome = nome
         self.linha = linha
+        self.regiao = regiao   # "Minas Gerais", "EUA"... (pra busca achar por lugar)
+        self.idioma = idioma
 
 
 class Resultado:
@@ -110,9 +124,10 @@ class _CabecalhoHtml(HTMLParser):
             self._no_title = False
 
 
-def ler_candidatos(caminho):
-    """Formato: uma linha por site, "Categoria | URL" ou "Categoria | URL | Nome".
-    Linhas vazias e começando com # são ignoradas."""
+def ler_candidatos(caminho, idioma_padrao="pt"):
+    """Formato: uma linha por site, "Categoria | URL", e opcionalmente
+    "| Nome | Região | Idioma" (vazio = sem). Linhas vazias e começando
+    com # são ignoradas."""
     candidatos, erros = [], []
     for n, bruta in enumerate(caminho.read_text(encoding="utf-8").splitlines(), start=1):
         linha = bruta.strip()
@@ -129,7 +144,12 @@ def ler_candidatos(caminho):
         if not url.startswith(("http://", "https://")):
             erros.append(f"linha {n}: URL precisa começar com http:// ou https:// -> {url!r}")
             continue
-        candidatos.append(Candidato(categoria, url, partes[2] if len(partes) > 2 and partes[2] else None, n))
+        campo = lambda i: partes[i] if len(partes) > i and partes[i] else None  # noqa: E731
+        idioma = campo(4) or idioma_padrao
+        if idioma not in IDIOMAS:
+            erros.append(f"linha {n}: idioma {idioma!r} não é um de {IDIOMAS}")
+            continue
+        candidatos.append(Candidato(categoria, url, campo(2), n, regiao=campo(3), idioma=idioma))
     return candidatos, erros
 
 
@@ -276,6 +296,17 @@ def catalogar(sessao, candidato):
     return Resultado(candidato, erro=" | ".join(motivos))
 
 
+def alvo_do_site(url):
+    """Endereço pro sitemap e pro Google Notícias: a seção, se o candidato
+    aponta pra uma (bbc.com/portuguese), mas a página inicial se ele já é
+    o endereço de um feed (electrek.co/feed/): "site:electrek.co/feed" no
+    Google Notícias não acha nada."""
+    p = urlparse(url)
+    if re.search(r"(^|/)(feeds?|rss|atom)(/|$)|\.(xml|rss|atom|cms)$", p.path.lower()):
+        return f"{p.scheme}://{p.netloc}"
+    return url
+
+
 def recente_o_bastante(datas):
     limite = datetime.now(timezone.utc) - timedelta(days=MAX_DIAS_SEM_PUBLICAR)
     return not datas or max(datas) >= limite
@@ -285,9 +316,10 @@ def tentar_sitemap(candidato, nome_site, motivos):
     """Sitemap de notícias declarado no robots.txt (ou num caminho comum).
     Se o candidato aponta pra uma seção (ex.: bbc.com/portuguese), o
     filtro vai junto no endereço salvo (#caminho=...)."""
-    caminho = urlparse(candidato.url).path.rstrip("/")
+    alvo = alvo_do_site(candidato.url)
+    caminho = urlparse(alvo).path.rstrip("/")
     try:
-        sitemaps = sitemaps_do_robots(candidato.url, USER_AGENT)
+        sitemaps = sitemaps_do_robots(alvo, USER_AGENT)
     except requests.RequestException as e:
         motivos.append(f"sitemap: robots.txt não abriu ({descrever_erro(e)})")
         return None
@@ -316,12 +348,13 @@ def tentar_sitemap(candidato, nome_site, motivos):
 def tentar_google_news(sessao, candidato, nome_site, motivos):
     """RSS de busca do Google Notícias restrito ao site. Confere se as
     notícias são mesmo do site pedido (o campo <source> de cada item)."""
-    url = url_google_news(candidato.url)
+    alvo = alvo_do_site(candidato.url)
+    url = url_google_news(alvo, candidato.idioma)
     feed, erro = validar_feed(sessao, url)
     if feed is None:
         motivos.append(f"Google Notícias: {erro}")
         return None
-    do_site = entradas_do_site(feed.entries, candidato.url)
+    do_site = entradas_do_site(feed.entries, alvo)
     if len(do_site) < MIN_ENTRADAS:
         motivos.append("Google Notícias: resultados não são desse site")
         return None
@@ -373,10 +406,11 @@ def sql_texto(valor):
     return "'" + str(valor).replace("'", "''") + "'"
 
 
-def proximo_arquivo_sql():
+def proximo_arquivo_sql(rotulo=None):
     numeros = [int(p.name[:3]) for p in (RAIZ / "sql").glob("[0-9][0-9][0-9]_*.sql")]
     numero = max(numeros, default=0) + 1
-    return RAIZ / "sql" / f"{numero:03d}_catalogo_{date.today().isoformat()}.sql"
+    meio = f"catalogo_{rotulo}" if rotulo else "catalogo"
+    return RAIZ / "sql" / f"{numero:03d}_{meio}_{date.today().isoformat()}.sql"
 
 
 def escrever_sql(aprovados, caminho):
@@ -387,73 +421,105 @@ def escrever_sql(aprovados, caminho):
         "-- Cada feed abaixo foi baixado e validado (entradas, títulos, publicação",
         f"-- recente nos últimos {MAX_DIAS_SEM_PUBLICAR} dias). Revise nomes/descrições antes de rodar.",
         "-- on conflict (url) do nothing: rodar duas vezes não duplica nada.",
+        "--",
+        "-- Entram só no mapa (vitrine = false, o padrão do sql/031): não são",
+        "-- coletadas de hora em hora. Quando alguém segue, viram fonte normal.",
         "-- ============================================================",
         "",
         "-- kind: 'rss' (inclui o RSS de busca do Google Notícias) ou 'sitemap' (sql/021).",
         "",
-        "insert into feed_catalog (category, name, url, description, kind) values",
+        "insert into feed_catalog (category, name, url, description, kind, idioma, regiao) values",
     ]
     valores = []
-    for r in sorted(aprovados, key=lambda r: (CATEGORIAS.index(r.candidato.categoria), r.nome.lower())):
+    for r in sorted(aprovados, key=lambda r: (CATEGORIAS.index(r.candidato.categoria), r.candidato.regiao or "", r.nome.lower())):
         ultima = f"{r.ultima:%d/%m/%Y}" if r.ultima else "sem data"
         origem = {"rss": "RSS do site", "sitemap": "sitemap de notícias", "google_news": "Google Notícias"}[r.via]
         kind = "sitemap" if r.via == "sitemap" else "rss"
         valores.append(
             f"    -- via {origem}: {r.entradas} entradas, última em {ultima}\n"
             f"    ({sql_texto(r.candidato.categoria)}, {sql_texto(r.nome)}, {sql_texto(r.feed_url)}, "
-            f"{sql_texto(r.descricao)}, {sql_texto(kind)})"
+            f"{sql_texto(r.descricao)}, {sql_texto(kind)}, {sql_texto(r.candidato.idioma)}, {sql_texto(r.candidato.regiao)})"
         )
     linhas.append(",\n".join(valores))
     linhas.append("on conflict (url) do nothing;")
     caminho.write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
+_local = threading.local()
+
+
+def _sessao():
+    """Uma sessão HTTP por thread (requests.Session não é segura entre threads)."""
+    if not hasattr(_local, "sessao"):
+        _local.sessao = requests.Session()
+        _local.sessao.headers["User-Agent"] = USER_AGENT
+    return _local.sessao
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--candidatos", default=str(RAIZ / "catalogo" / "candidatos.txt"))
+    parser.add_argument("--idioma", default="pt", choices=IDIOMAS, help="idioma das linhas que não dizem o próprio")
+    parser.add_argument("--rotulo", help="entra no nome do arquivo SQL (ex.: ingles)")
     args = parser.parse_args()
 
-    candidatos, erros_arquivo = ler_candidatos(Path(args.candidatos))
+    candidatos, erros_arquivo = ler_candidatos(Path(args.candidatos), args.idioma)
     for erro in erros_arquivo:
         print(f"  ignorado — {erro}")
 
     ja_catalogadas = urls_ja_no_catalogo()
     sites_catalogados = {site_de(u) for u in ja_catalogadas}
-    sessao = requests.Session()
-    sessao.headers["User-Agent"] = USER_AGENT
 
-    aprovados, rejeitados, repetidos = [], [], []
+    # Candidato que é a página inicial de um site já catalogado: pula,
+    # mesmo que o feed de hoje dê outro endereço (ex.: o RSS falhou e
+    # sairia pelo Google Notícias, duplicando a fonte). Candidatos com
+    # caminho (ex.: seções do G1) continuam sendo checados pela URL.
+    def ja_no_catalogo(c):
+        return urlparse(c.url).path.strip("/") == "" and site_de(c.url) in sites_catalogados
+
+    pendentes = [c for c in candidatos if not ja_no_catalogo(c)]
+    repetidos = [Resultado(c) for c in candidatos if ja_no_catalogo(c)]
+    for r in repetidos:
+        print(f"= site já no catálogo: {r.candidato.url}")
+
+    feitos = [0]
+    trava = threading.Lock()
+
+    def processar(candidato):
+        try:
+            resultado = catalogar(_sessao(), candidato)
+        except Exception as e:  # feed malformado que derruba o feedparser etc.: rejeita só este
+            resultado = Resultado(candidato, erro=f"erro inesperado ({type(e).__name__}: {e})")
+        with trava:
+            feitos[0] += 1
+            marca = "✗" if resultado.erro else "✓"
+            detalhe = resultado.erro if resultado.erro else f"{resultado.nome} [{resultado.via}] — {resultado.feed_url}"
+            print(f"[{feitos[0]}/{len(pendentes)}] {marca} {candidato.url}: {detalhe}", flush=True)
+        return resultado
+
+    with ThreadPoolExecutor(SITES_EM_PARALELO) as executor:
+        resultados = list(executor.map(processar, pendentes))
+
+    # na ordem do arquivo: se dois candidatos dão no mesmo feed, fica o primeiro
+    aprovados, rejeitados = [], []
     vistos = set(ja_catalogadas)
-    for i, candidato in enumerate(candidatos, start=1):
-        print(f"[{i}/{len(candidatos)}] {candidato.categoria:<14} {candidato.url}")
-        # Candidato que é a página inicial de um site já catalogado: pula,
-        # mesmo que o feed de hoje dê outro endereço (ex.: o RSS falhou e
-        # sairia pelo Google Notícias, duplicando a fonte). Candidatos com
-        # caminho (ex.: seções do G1) continuam sendo checados pela URL.
-        if urlparse(candidato.url).path.strip("/") == "" and site_de(candidato.url) in sites_catalogados:
-            print("    = site já no catálogo")
-            repetidos.append(Resultado(candidato))
-            continue
-        resultado = catalogar(sessao, candidato)
+    for resultado in resultados:
         if resultado.erro:
-            print(f"    ✗ {resultado.erro}")
             rejeitados.append(resultado)
         elif resultado.feed_url in vistos:
-            print(f"    = já no catálogo ({resultado.feed_url})")
             repetidos.append(resultado)
         else:
-            via = "" if resultado.via == "rss" else f" [via {resultado.via}]"
-            print(f"    ✓ {resultado.nome}{via} — {resultado.feed_url} ({resultado.entradas} entradas)")
             vistos.add(resultado.feed_url)
             aprovados.append(resultado)
-        time.sleep(PAUSA_ENTRE_SITES_SEGUNDOS)
 
     print()
     print(f"{len(aprovados)} aprovado(s), {len(repetidos)} já no catálogo, {len(rejeitados)} rejeitado(s).")
+    for r in rejeitados:
+        print(f"  rejeitado: {r.candidato.url} — {r.erro[:160]}")
     if not aprovados:
         print("Nada novo pra catalogar — nenhum arquivo SQL gerado.")
         return
-    caminho = proximo_arquivo_sql()
+    caminho = proximo_arquivo_sql(args.rotulo)
     escrever_sql(aprovados, caminho)
     print(f"SQL gerado: {caminho.relative_to(RAIZ)} — revise e rode no SQL Editor do Supabase.")
 

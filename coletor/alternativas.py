@@ -126,11 +126,17 @@ def sitemaps_do_robots(url_site, user_agent):
 
 # ---------------------------------------------------------- Google Notícias
 
-def url_google_news(url_site):
+# Edição do Google Notícias por idioma: a de português do Brasil acha
+# pouco de sites em inglês, e vice-versa
+EDICOES_GOOGLE_NEWS = {"pt": "hl=pt-BR&gl=BR&ceid=BR:pt-419", "en": "hl=en-US&gl=US&ceid=US:en"}
+
+
+def url_google_news(url_site, idioma="pt"):
     """RSS de busca do Google Notícias restrito a um site (e seção, se houver)."""
     p = urlparse(url_site)
     alvo = p.netloc.removeprefix("www.") + p.path.rstrip("/")
-    return f"https://news.google.com/rss/search?q={quote('site:' + alvo)}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+    edicao = EDICOES_GOOGLE_NEWS.get(idioma, EDICOES_GOOGLE_NEWS["pt"])
+    return f"https://news.google.com/rss/search?q={quote('site:' + alvo)}&{edicao}"
 
 
 def eh_google_news(url):

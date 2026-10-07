@@ -1,0 +1,498 @@
+# Mapa de veículos brasileiros (07/10), a partir de um levantamento feito
+# com o ChatGPT, revisado: ficaram de fora o que não é veículo de notícia
+# (Flashscore, Webmotors, IpeaData...) e repetições. Entram só no mapa do
+# catálogo (sql/031): são coletados quando alguém segue.
+#
+# Formato: Categoria | URL do site ou do feed | Nome | Região | Idioma
+#   Região: estado ("Minas Gerais"), vazio pros nacionais. Idioma: vazio = pt.
+# Rodar: python catalogo/catalogar.py --candidatos catalogo/veiculos.txt --rotulo brasil
+
+# --- Notícias: nacionais ---
+Notícias | https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/geral/?body=%7B%22layout%22:%22google-news%22%7D | Estadão
+Notícias | https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/brasil/?body=%7B%22layout%22:%22google-news%22%7D | Estadão Brasil
+Notícias | https://www.folha.uol.com.br | Folha de S.Paulo
+Notícias | https://feeds.folha.uol.com.br/emcimadahora/rss091.xml | Folha Em Cima da Hora
+Notícias | https://oglobo.globo.com | O Globo
+Notícias | https://g1.globo.com/rss/g1/ | g1
+Notícias | https://noticias.uol.com.br | UOL Notícias
+Notícias | https://www.cnnbrasil.com.br | CNN Brasil
+Notícias | https://agenciabrasil.ebc.com.br | Agência Brasil
+Notícias | https://agenciagov.ebc.com.br | Agência Gov
+Notícias | https://www.metropoles.com | Metrópoles
+Notícias | https://www.terra.com.br | Terra
+Notícias | https://noticias.r7.com | R7
+Notícias | https://www.band.uol.com.br | Band
+Notícias | https://timesbrasil.com.br | Times Brasil CNBC
+Notícias | https://jovempan.com.br | Jovem Pan
+Notícias | https://sbtnews.sbt.com.br | SBT News
+Notícias | https://veja.abril.com.br | Veja
+Notícias | https://istoe.com.br | IstoÉ
+Notícias | https://www.ig.com.br | iG
+Notícias | https://www.brasil247.com | Brasil 247
+Notícias | https://www.correiobraziliense.com.br | Correio Braziliense | Distrito Federal
+Notícias | https://www.gazetadopovo.com.br | Gazeta do Povo | Paraná
+Notícias | https://www.jb.com.br | Jornal do Brasil | Rio de Janeiro
+Notícias | https://www.brasildefato.com.br | Brasil de Fato
+Notícias | https://www.nexojornal.com.br | Nexo
+Notícias | https://piaui.folha.uol.com.br | piauí
+Notícias | https://www.canalmeio.com.br | Meio
+
+# --- Notícias: investigativo, checagem e independentes ---
+Notícias | https://apublica.org | Agência Pública
+Notícias | https://www.intercept.com.br | Intercept Brasil
+Notícias | https://www.aosfatos.org | Aos Fatos
+Notícias | https://lupa.uol.com.br | Agência Lupa
+Notícias | https://reporterbrasil.org.br | Repórter Brasil
+Notícias | https://ponte.org | Ponte Jornalismo
+Notícias | https://www.agenciamural.org.br | Agência Mural | São Paulo
+Notícias | https://marcozero.org | Marco Zero Conteúdo | Pernambuco
+Notícias | https://fiquemsabendo.com.br | Fiquem Sabendo
+Notícias | https://nucleo.jor.br | Núcleo Jornalismo
+Notícias | https://projetocolabora.com.br | Projeto Colabora
+Notícias | https://azmina.com.br | AzMina
+Notícias | https://deolhonosruralistas.com.br | De Olho nos Ruralistas
+
+# --- Notícias: Portugal (em português) ---
+Mundo | https://www.publico.pt | Público | Portugal
+Mundo | https://observador.pt | Observador | Portugal
+Mundo | https://expresso.pt | Expresso | Portugal
+Mundo | https://www.rtp.pt/noticias | RTP Notícias | Portugal
+Mundo | https://sicnoticias.pt | SIC Notícias | Portugal
+
+# --- Política, governo e justiça ---
+Política | https://feeds.folha.uol.com.br/poder/rss091.xml | Folha Poder
+Política | https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/politica/?body=%7B%22layout%22:%22google-news%22%7D | Estadão Política
+Política | https://oglobo.globo.com/politica/ | O Globo Política
+Política | https://www.jota.info | JOTA
+Política | https://www.conjur.com.br | Consultor Jurídico (ConJur)
+Política | https://www.migalhas.com.br | Migalhas
+Política | https://oantagonista.com.br | O Antagonista
+Política | https://www.ocafezinho.com | O Cafezinho
+Política | https://revistaforum.com.br | Revista Fórum
+Política | https://obastidor.com.br | O Bastidor
+Política | https://crusoe.com.br | Crusoé
+Política | https://platobr.com.br | PlatôBR
+Política | https://iclnoticias.com.br | ICL Notícias
+Política | https://diariodopoder.com.br | Diário do Poder
+Política | https://www.diariodocentrodomundo.com.br | Diário do Centro do Mundo
+Política | https://revistaoeste.com | Revista Oeste
+Política | https://www.camara.leg.br/noticias | Agência Câmara
+Política | https://www12.senado.leg.br/noticias | Agência Senado
+Política | https://www.gov.br/planalto/pt-br/acompanhe-o-planalto/noticias | Planalto
+Política | https://portal.stf.jus.br/noticias/ | STF
+Política | https://www.stj.jus.br/sites/portalp/Comunicacao/Ultimas-noticias | STJ
+Política | https://www.tse.jus.br/comunicacao/noticias | TSE
+Política | https://www.cnj.jus.br/noticias/ | CNJ
+
+# --- Finanças ---
+Finanças | https://feeds.folha.uol.com.br/mercado/rss091.xml | Folha Mercado
+Finanças | https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/economia/?body=%7B%22layout%22:%22google-news%22%7D | Estadão Economia
+Finanças | https://valor.globo.com | Valor Econômico
+Finanças | https://valorinveste.globo.com | Valor Investe
+Finanças | https://pipelinevalor.globo.com | Pipeline
+Finanças | https://www.bloomberglinea.com.br | Bloomberg Línea
+Finanças | https://braziljournal.com | Brazil Journal
+Finanças | https://neofeed.com.br | NeoFeed
+Finanças | https://forbes.com.br | Forbes Brasil
+Finanças | https://investnews.com.br | InvestNews
+Finanças | https://epocanegocios.globo.com | Época Negócios
+Finanças | https://revistapegn.globo.com | Pequenas Empresas & Grandes Negócios
+Finanças | https://startupi.com.br | Startupi
+Finanças | https://investidor10.com.br/noticias/ | Investidor10
+Finanças | https://seucreditodigital.com.br | Seu Crédito Digital
+Finanças | https://mercadoeconsumo.com.br | Mercado & Consumo
+Finanças | https://vocesa.abril.com.br | Você S/A
+Finanças | https://agenciadenoticias.ibge.gov.br | Agência IBGE
+Finanças | https://www.bcb.gov.br | Banco Central
+Finanças | https://www.gov.br/fazenda/pt-br/assuntos/noticias | Ministério da Fazenda
+Finanças | https://www.gov.br/receitafederal/pt-br/assuntos/noticias | Receita Federal
+Finanças | https://www.gov.br/cvm/pt-br/assuntos/noticias | CVM
+Finanças | https://www.ipea.gov.br/portal/ | Ipea
+
+# --- Tecnologia (inclui IA e segurança) ---
+Tecnologia | https://www.oficinadanet.com.br | Oficina da Net
+Tecnologia | https://startups.com.br | Startups
+Tecnologia | https://www.mobiletime.com.br | Mobile Time
+Tecnologia | https://www.baguete.com.br | Baguete
+Tecnologia | https://mundoconectado.com.br | Mundo Conectado
+Tecnologia | https://www.hardware.com.br | Hardware.com.br
+Tecnologia | https://mittechreview.com.br | MIT Technology Review Brasil
+Tecnologia | https://fastcompanybrasil.com | Fast Company Brasil
+Tecnologia | https://www.thehack.com.br | The Hack
+Tecnologia | https://www.cisoadvisor.com.br | CISO Advisor
+Tecnologia | https://securityleaders.com.br | Security Leaders
+Tecnologia | https://itforum.com.br | IT Forum
+Tecnologia | https://g1.globo.com/rss/g1/tecnologia/ | g1 Tecnologia
+
+# --- Ciência ---
+Ciência | https://www.nationalgeographicbrasil.com | National Geographic Brasil
+Ciência | https://revistagalileu.globo.com | Galileu
+Ciência | https://agencia.fapesp.br | Agência FAPESP
+Ciência | https://www.inovacaotecnologica.com.br | Inovação Tecnológica
+Ciência | https://abori.com.br | Agência Bori
+Ciência | https://cienciahoje.org.br | Ciência Hoje
+Ciência | https://www.comciencia.br | ComCiência
+Ciência | https://www.revistaquestaodeciencia.com.br | Revista Questão de Ciência
+Ciência | https://www.ihu.unisinos.br | IHU Unisinos
+Ciência | https://theconversation.com/br | The Conversation Brasil
+Ciência | https://feeds.folha.uol.com.br/ciencia/rss091.xml | Folha Ciência
+Ciência | https://www.gov.br/inpe/pt-br/assuntos/ultimas-noticias | Inpe
+
+# --- Meio ambiente ---
+Meio ambiente | https://oeco.org.br | ((o))eco
+Meio ambiente | https://brasil.mongabay.com | Mongabay Brasil
+Meio ambiente | https://infoamazonia.org | InfoAmazonia
+Meio ambiente | https://climainfo.org.br | ClimaInfo
+Meio ambiente | https://umsoplaneta.globo.com | Um Só Planeta
+Meio ambiente | https://ciclovivo.com.br | CicloVivo
+Meio ambiente | https://envolverde.com.br | Envolverde
+Meio ambiente | https://www.ecodebate.com.br | EcoDebate
+Meio ambiente | https://www.oc.eco.br | Observatório do Clima
+Meio ambiente | https://www.capitalreset.com | Reset
+Meio ambiente | https://amazoniareal.com.br | Amazônia Real
+Meio ambiente | https://www.amazonialatitude.com | Amazônia Latitude
+Meio ambiente | https://feeds.folha.uol.com.br/ambiente/rss091.xml | Folha Ambiente
+Meio ambiente | https://g1.globo.com/rss/g1/natureza/ | g1 Meio Ambiente
+
+# --- Saúde ---
+Saúde | https://portal.fiocruz.br | Fiocruz
+Saúde | https://agencia.fiocruz.br | Agência Fiocruz
+Saúde | https://www.minhavida.com.br | Minha Vida
+Saúde | https://www.uol.com.br/vivabem/ | UOL VivaBem
+Saúde | https://feeds.folha.uol.com.br/equilibrioesaude/rss091.xml | Folha Equilíbrio e Saúde
+Saúde | https://pebmed.com.br | PEBMED
+Saúde | https://saudebusiness.com | Saúde Business
+Saúde | https://futurodasaude.com.br | Futuro da Saúde
+Saúde | https://medicinasa.com.br | Medicina S/A
+Saúde | https://ictq.com.br | ICTQ
+Saúde | https://www.conass.org.br | Conass
+Saúde | https://portal.cfm.org.br | Conselho Federal de Medicina
+Saúde | https://www.gov.br/saude/pt-br/assuntos/noticias | Ministério da Saúde
+Saúde | https://www.gov.br/anvisa/pt-br/assuntos/noticias-anvisa | Anvisa
+
+# --- Esportes ---
+Esportes | https://www.uol.com.br/esporte/ | UOL Esporte
+Esportes | https://feeds.folha.uol.com.br/esporte/rss091.xml | Folha Esporte
+Esportes | https://www.tntsports.com.br | TNT Sports Brasil
+Esportes | https://maquinadoesporte.com.br | Máquina do Esporte
+Esportes | https://www.goal.com/br | Goal Brasil
+Esportes | https://www.olimpiadatododia.com.br | Olimpíada Todo Dia
+Esportes | https://www.surtoolimpico.com.br | Surto Olímpico
+Esportes | https://www.torcedores.com | Torcedores
+Esportes | https://www.motorsport.com/br/ | Motorsport.com Brasil
+Esportes | https://www.grandepremio.com.br | Grande Prêmio
+Esportes | https://www.f1mania.net | F1Mania
+Esportes | https://www.theplayoffs.com.br | The Playoffs
+Esportes | https://jumperbrasil.com.br | Jumper Brasil
+Esportes | https://www.futebolinterior.com.br | Futebol Interior
+Esportes | https://www.meutimao.com.br | Meu Timão | São Paulo
+Esportes | https://www.centraldotimao.com.br | Central do Timão | São Paulo
+Esportes | https://www.nossopalestra.com.br | Nosso Palestra | São Paulo
+Esportes | https://www.palmeirasonline.com | Palmeiras Online | São Paulo
+Esportes | https://www.verdazzo.com.br | Verdazzo | São Paulo
+Esportes | https://www.spfc.net | SPFC.net | São Paulo
+Esportes | https://www.arquibancadatricolor.com.br | Arquibancada Tricolor | São Paulo
+Esportes | https://www.diariodopeixe.com.br | Diário do Peixe | São Paulo
+Esportes | https://colunadofla.com | Coluna do Fla | Rio de Janeiro
+Esportes | https://www.mundorubronegro.com | Mundo Rubro Negro | Rio de Janeiro
+Esportes | https://www.vasconoticias.com.br | Vasco Notícias | Rio de Janeiro
+Esportes | https://www.supervasco.com | SuperVasco | Rio de Janeiro
+Esportes | https://www.netflu.com.br | NetFlu | Rio de Janeiro
+Esportes | https://www.noataque.com.br | No Ataque | Minas Gerais
+Esportes | https://www.radiogrenal.com.br | Rádio Grenal | Rio Grande do Sul
+
+# --- Entretenimento, cultura e games ---
+Entretenimento | https://www.uol.com.br/splash/ | Splash UOL
+Entretenimento | https://feeds.folha.uol.com.br/ilustrada/rss091.xml | Folha Ilustrada
+Entretenimento | https://rollingstone.uol.com.br | Rolling Stone Brasil
+Entretenimento | https://www.purepeople.com.br | Purepeople
+Entretenimento | https://revistaquem.globo.com | Quem
+Entretenimento | https://hugogloss.uol.com.br | Hugo Gloss
+Entretenimento | https://contigo.com.br | Contigo!
+Entretenimento | https://caras.com.br | Caras
+Entretenimento | https://noticiasdatv.uol.com.br | Notícias da TV
+Entretenimento | https://natelinha.uol.com.br | NaTelinha
+Entretenimento | https://observatoriodatv.uol.com.br | Observatório da TV
+Entretenimento | https://www.tenhomaisdiscosqueamigos.com | Tenho Mais Discos Que Amigos!
+Entretenimento | https://www.planocritico.com | Plano Crítico
+Entretenimento | https://pipocamoderna.com.br | Pipoca Moderna
+Entretenimento | https://revistabravo.com.br | Revista Bravo!
+Entretenimento | https://quatrocincoum.com.br | Quatro Cinco Um
+Entretenimento | https://revistacult.uol.com.br | Revista Cult
+Entretenimento | https://meuplaystation.com | MeuPlayStation
+Entretenimento | https://www.psxbrasil.com.br | PSX Brasil
+Entretenimento | https://www.gamevicio.com | GameVicio
+Entretenimento | https://www.comboinfinito.com.br | Combo Infinito
+Entretenimento | https://criticalhits.com.br | Critical Hits
+Entretenimento | https://www.arkade.com.br | Arkade
+Entretenimento | https://flowgames.gg | Flow Games
+
+# --- Automóveis ---
+Automóveis | https://autoesporte.globo.com | Autoesporte
+Automóveis | https://quatrorodas.abril.com.br | Quatro Rodas
+Automóveis | https://motor1.uol.com.br | Motor1 Brasil
+Automóveis | https://www.uol.com.br/carros/ | UOL Carros
+Automóveis | https://autopapo.com.br | AutoPapo
+Automóveis | https://www.mobiauto.com.br/revista | Mobiauto
+Automóveis | https://insideevs.uol.com.br | InsideEVs Brasil
+Automóveis | https://flatout.com.br | FlatOut
+Automóveis | https://jornaldocarro.estadao.com.br | Jornal do Carro
+Automóveis | https://www.noticiasautomotivas.com.br | Notícias Automotivas
+Automóveis | https://motorshow.com.br | Motor Show
+Automóveis | https://revistacarro.com.br | Revista Carro
+Automóveis | https://garagem360.com.br | Garagem 360
+Automóveis | https://g1.globo.com/rss/g1/carros/ | g1 Carros
+
+# --- Outros: casa, estilo, carreira e educação ---
+Outros | https://casavogue.globo.com | Casa Vogue
+Outros | https://revistacasaejardim.globo.com | Casa e Jardim
+Outros | https://casa.com.br | Casa.com.br
+Outros | https://www.archdaily.com.br | ArchDaily Brasil
+Outros | https://www.vivadecora.com.br/revista | Viva Decora
+Outros | https://claudia.abril.com.br | Claudia
+Outros | https://revistamarieclaire.globo.com | Marie Claire
+Outros | https://vogue.globo.com | Vogue Brasil
+Outros | https://gq.globo.com | GQ Brasil
+Outros | https://glamour.globo.com | Glamour Brasil
+Outros | https://elle.com.br | Elle Brasil
+Outros | https://vidasimples.co | Vida Simples
+Outros | https://razoesparaacreditar.com | Razões para Acreditar
+Outros | https://guiadoestudante.abril.com.br | Guia do Estudante
+Outros | https://revistaeducacao.com.br | Revista Educação
+Outros | https://porvir.org | Porvir
+Outros | https://novaescola.org.br | Nova Escola
+Outros | https://todospelaeducacao.org.br | Todos Pela Educação
+Outros | https://www.napratica.org.br | Na Prática
+Outros | https://g1.globo.com/rss/g1/educacao/ | g1 Educação
+Outros | https://g1.globo.com/rss/g1/turismo-e-viagem/ | g1 Turismo e Viagem
+
+# --- Mundo ---
+Mundo | https://news.un.org/pt | ONU News
+Mundo | https://www.swissinfo.ch/por | swissinfo.ch
+Mundo | https://www.dw.com/pt-br | DW Brasil
+Mundo | https://pt.euronews.com | Euronews
+Mundo | https://feeds.folha.uol.com.br/mundo/rss091.xml | Folha Mundo
+
+# --- Humor ---
+Humor | https://www.ahnegao.com.br | Ah Negão!
+
+# --- Regionais: g1 dos estados ---
+Notícias | https://g1.globo.com/rss/g1/mg/minas-gerais/ | g1 Minas Gerais | Minas Gerais
+Notícias | https://g1.globo.com/rss/g1/sp/sao-paulo/ | g1 São Paulo | São Paulo
+Notícias | https://g1.globo.com/rss/g1/rj/rio-de-janeiro/ | g1 Rio de Janeiro | Rio de Janeiro
+Notícias | https://g1.globo.com/rss/g1/es/espirito-santo/ | g1 Espírito Santo | Espírito Santo
+Notícias | https://g1.globo.com/rss/g1/pr/parana/ | g1 Paraná | Paraná
+Notícias | https://g1.globo.com/rss/g1/sc/santa-catarina/ | g1 Santa Catarina | Santa Catarina
+Notícias | https://g1.globo.com/rss/g1/rs/rio-grande-do-sul/ | g1 Rio Grande do Sul | Rio Grande do Sul
+Notícias | https://g1.globo.com/rss/g1/ba/bahia/ | g1 Bahia | Bahia
+Notícias | https://g1.globo.com/rss/g1/pe/pernambuco/ | g1 Pernambuco | Pernambuco
+Notícias | https://g1.globo.com/rss/g1/ce/ceara/ | g1 Ceará | Ceará
+Notícias | https://g1.globo.com/rss/g1/pb/paraiba/ | g1 Paraíba | Paraíba
+Notícias | https://g1.globo.com/rss/g1/rn/rio-grande-do-norte/ | g1 Rio Grande do Norte | Rio Grande do Norte
+Notícias | https://g1.globo.com/rss/g1/al/alagoas/ | g1 Alagoas | Alagoas
+Notícias | https://g1.globo.com/rss/g1/se/sergipe/ | g1 Sergipe | Sergipe
+Notícias | https://g1.globo.com/rss/g1/ma/maranhao/ | g1 Maranhão | Maranhão
+Notícias | https://g1.globo.com/rss/g1/pi/piaui/ | g1 Piauí | Piauí
+Notícias | https://g1.globo.com/rss/g1/am/amazonas/ | g1 Amazonas | Amazonas
+Notícias | https://g1.globo.com/rss/g1/pa/para/ | g1 Pará | Pará
+Notícias | https://g1.globo.com/rss/g1/ac/acre/ | g1 Acre | Acre
+Notícias | https://g1.globo.com/rss/g1/ro/rondonia/ | g1 Rondônia | Rondônia
+Notícias | https://g1.globo.com/rss/g1/to/tocantins/ | g1 Tocantins | Tocantins
+Notícias | https://g1.globo.com/rss/g1/mt/mato-grosso/ | g1 Mato Grosso | Mato Grosso
+Notícias | https://g1.globo.com/rss/g1/ms/mato-grosso-do-sul/ | g1 Mato Grosso do Sul | Mato Grosso do Sul
+Notícias | https://g1.globo.com/rss/g1/go/goias/ | g1 Goiás | Goiás
+Notícias | https://g1.globo.com/rss/g1/df/distrito-federal/ | g1 Distrito Federal | Distrito Federal
+
+# --- Regionais: Sudeste ---
+Notícias | https://www.em.com.br | Estado de Minas | Minas Gerais
+Notícias | https://www.otempo.com.br | O Tempo | Minas Gerais
+Notícias | https://www.hojeemdia.com.br | Hoje em Dia | Minas Gerais
+Notícias | https://www.itatiaia.com.br | Itatiaia | Minas Gerais
+Notícias | https://ofator.com.br | O Fator | Minas Gerais
+Notícias | https://bhaz.com.br | BHAZ | Minas Gerais
+Notícias | https://diariodocomercio.com.br | Diário do Comércio | Minas Gerais
+Notícias | https://www.uai.com.br | Portal UAI | Minas Gerais
+Notícias | https://www.diariodoaco.com.br | Diário do Aço | Minas Gerais
+Notícias | https://jornaldeuberaba.com.br | Jornal de Uberaba | Minas Gerais
+Notícias | https://www.dgabc.com.br | Diário do Grande ABC | São Paulo
+Notícias | https://correio.rac.com.br | Correio Popular | São Paulo
+Notícias | https://www.jj.com.br | Jornal de Jundiaí | São Paulo
+Notícias | https://www.jornaldepiracicaba.com.br | Jornal de Piracicaba | São Paulo
+Notícias | https://www.acidadeon.com | A Cidade ON | São Paulo
+Notícias | https://www.diariodaregiao.com.br | Diário da Região | São Paulo
+Notícias | https://www.jornalcruzeiro.com.br | Jornal Cruzeiro do Sul | São Paulo
+Notícias | https://www.gazetasp.com.br | Gazeta de São Paulo | São Paulo
+Notícias | https://www.abcdoabc.com.br | ABC do ABC | São Paulo
+Notícias | https://www.moginews.com.br | Mogi News | São Paulo
+Notícias | https://www.ovale.com.br | O Vale | São Paulo
+Notícias | https://sampi.net.br | Sampi | São Paulo
+Notícias | https://www.atribuna.com.br | A Tribuna | São Paulo
+Notícias | https://extra.globo.com | Extra | Rio de Janeiro
+Notícias | https://odia.ig.com.br | O Dia | Rio de Janeiro
+Notícias | https://diariodorio.com | Diário do Rio | Rio de Janeiro
+Notícias | https://www.srzd.com | SRzd | Rio de Janeiro
+Notícias | https://www.osaogoncalo.com.br | O São Gonçalo | Rio de Janeiro
+Notícias | https://enfoco.com.br | Enfoco | Rio de Janeiro
+Notícias | https://www.diariodepetropolis.com.br | Diário de Petrópolis | Rio de Janeiro
+Notícias | https://avozdaserra.com.br | A Voz da Serra | Rio de Janeiro
+Notícias | https://www.folhadoslagos.com | Folha dos Lagos | Rio de Janeiro
+Notícias | https://eurio.com.br | Eu, Rio! | Rio de Janeiro
+Notícias | https://www.agazeta.com.br | A Gazeta | Espírito Santo
+Notícias | https://tribunaonline.com.br | A Tribuna ES | Espírito Santo
+Notícias | https://www.es360.com.br | ES360 | Espírito Santo
+Notícias | https://www.seculodiario.com.br | Século Diário | Espírito Santo
+Notícias | https://www.folhavitoria.com.br | Folha Vitória | Espírito Santo
+Notícias | https://eshoje.com.br | ES Hoje | Espírito Santo
+
+# --- Regionais: Sul ---
+Notícias | https://www.bemparana.com.br | Bem Paraná | Paraná
+Notícias | https://www.tribunapr.com.br | Tribuna do Paraná | Paraná
+Notícias | https://paranaportal.uol.com.br | Paraná Portal | Paraná
+Notícias | https://massanews.com | Massa News | Paraná
+Notícias | https://ricmais.com.br | RIC Mais | Paraná
+Notícias | https://www.bandab.com.br | Banda B | Paraná
+Notícias | https://www.folhadelondrina.com.br | Folha de Londrina | Paraná
+Notícias | https://www.oparana.com.br | O Paraná | Paraná
+Notícias | https://www.diariodoscampos.com.br | Diário dos Campos | Paraná
+Notícias | https://cgn.inf.br | CGN | Paraná
+Notícias | https://catve.com | Catve | Paraná
+Notícias | https://www.nsctotal.com.br | NSC Total | Santa Catarina
+Notícias | https://ndmais.com.br | ND Mais | Santa Catarina
+Notícias | https://www.scc10.com.br | SCC10 | Santa Catarina
+Notícias | https://omunicipio.com.br | O Município | Santa Catarina
+Notícias | https://ocp.news | OCP News | Santa Catarina
+Notícias | https://www.engeplus.com.br | Engeplus | Santa Catarina
+Notícias | https://4oito.com.br | 4oito | Santa Catarina
+Notícias | https://informeblumenau.com | Informe Blumenau | Santa Catarina
+Notícias | https://gauchazh.clicrbs.com.br | GZH | Rio Grande do Sul
+Notícias | https://www.correiodopovo.com.br | Correio do Povo | Rio Grande do Sul
+Notícias | https://www.jornaldocomercio.com | Jornal do Comércio | Rio Grande do Sul
+Notícias | https://diariogaucho.clicrbs.com.br | Diário Gaúcho | Rio Grande do Sul
+Notícias | https://sul21.com.br | Sul21 | Rio Grande do Sul
+Notícias | https://www.matinaljornalismo.com.br | Matinal | Rio Grande do Sul
+Notícias | https://www.jornalnh.com.br | Jornal NH | Rio Grande do Sul
+Notícias | https://www.osul.com.br | O Sul | Rio Grande do Sul
+Notícias | https://www.abcmais.com | ABC+ | Rio Grande do Sul
+Notícias | https://www.diariopopular.com.br | Diário Popular | Rio Grande do Sul
+Notícias | https://www.jornalvs.com.br | Jornal VS | Rio Grande do Sul
+Notícias | https://leouve.com.br | Leouve | Rio Grande do Sul
+Notícias | https://www.onacional.com.br | O Nacional | Rio Grande do Sul
+
+# --- Regionais: Nordeste ---
+Notícias | https://www.correio24horas.com.br | Correio | Bahia
+Notícias | https://atarde.com.br | A Tarde | Bahia
+Notícias | https://www.bahianoticias.com.br | Bahia Notícias | Bahia
+Notícias | https://www.bnews.com.br | BNews | Bahia
+Notícias | https://www.metro1.com.br | Metro1 | Bahia
+Notícias | https://bahia.ba | Bahia.ba | Bahia
+Notícias | https://aratuon.com.br | Aratu On | Bahia
+Notícias | https://www.politicalivre.com.br | Política Livre | Bahia
+Notícias | https://www.bocaonews.com.br | Bocão News | Bahia
+Notícias | https://www.tribunadabahia.com.br | Tribuna da Bahia | Bahia
+Notícias | https://www.ibahia.com | iBahia | Bahia
+Notícias | https://bahiaeconomica.com.br | Bahia Econômica | Bahia
+Notícias | https://jc.uol.com.br | Jornal do Commercio | Pernambuco
+Notícias | https://www.folhape.com.br | Folha de Pernambuco | Pernambuco
+Notícias | https://www.diariodepernambuco.com.br | Diário de Pernambuco | Pernambuco
+Notícias | https://jamildo.com | Blog do Jamildo | Pernambuco
+Notícias | https://www.leiaja.com | LeiaJá | Pernambuco
+Notícias | https://diariodonordeste.verdesmares.com.br | Diário do Nordeste | Ceará
+Notícias | https://www.opovo.com.br | O Povo | Ceará
+Notícias | https://cearaagora.com.br | Ceará Agora | Ceará
+Notícias | https://www.focus.jor.br | Focus.Jor | Ceará
+Notícias | https://www.oestadoce.com.br | O Estado CE | Ceará
+Notícias | https://gcmais.com.br | GC Mais | Ceará
+Notícias | https://miseria.com.br | Miséria | Ceará
+Notícias | https://cn7.com.br | CN7 | Ceará
+Notícias | https://jornaldaparaiba.com.br | Jornal da Paraíba | Paraíba
+Notícias | https://www.clickpb.com.br | ClickPB | Paraíba
+Notícias | https://www.maispb.com.br | MaisPB | Paraíba
+Notícias | https://www.portalt5.com.br | Portal T5 | Paraíba
+Notícias | https://www.wscom.com.br | WSCOM | Paraíba
+Notícias | https://paraibaonline.com.br | Paraíba Online | Paraíba
+Notícias | https://www.polemicaparaiba.com.br | Polêmica Paraíba | Paraíba
+Notícias | https://tribunadonorte.com.br | Tribuna do Norte | Rio Grande do Norte
+Notícias | https://agorarn.com.br | Agora RN | Rio Grande do Norte
+Notícias | https://www.98fmnatal.com.br | 98 FM Natal | Rio Grande do Norte
+Notícias | https://saibamais.jor.br | Saiba Mais | Rio Grande do Norte
+Notícias | https://novonoticias.com | Novo Notícias | Rio Grande do Norte
+Notícias | https://www.blogdobg.com.br | Blog do BG | Rio Grande do Norte
+Notícias | https://www.defato.com | DeFato | Rio Grande do Norte
+Notícias | https://www.gazetaweb.com | Gazeta de Alagoas | Alagoas
+Notícias | https://www.cadaminuto.com.br | Cada Minuto | Alagoas
+Notícias | https://www.tnh1.com.br | TNH1 | Alagoas
+Notícias | https://tribunahoje.com | Tribuna Hoje | Alagoas
+Notícias | https://www.7segundos.com.br | 7Segundos | Alagoas
+Notícias | https://www.alagoas24horas.com.br | Alagoas 24 Horas | Alagoas
+Notícias | https://extraalagoas.com.br | Extra Alagoas | Alagoas
+Notícias | https://infonet.com.br | Infonet | Sergipe
+Notícias | https://www.jornaldacidade.net | Jornal da Cidade | Sergipe
+Notícias | https://www.f5news.com.br | F5 News | Sergipe
+Notícias | https://www.nenoticias.com.br | NE Notícias | Sergipe
+Notícias | https://www.jlpolitica.com.br | JL Política | Sergipe
+Notícias | https://a8se.com | Portal A8SE | Sergipe
+Notícias | https://oimparcial.com.br | O Imparcial | Maranhão
+Notícias | https://jornalpequeno.com.br | Jornal Pequeno | Maranhão
+Notícias | https://imirante.com | Imirante | Maranhão
+Notícias | https://maranhaohoje.com | Maranhão Hoje | Maranhão
+Notícias | https://www.oprogressonet.com | O Progresso | Maranhão
+Notícias | https://gilbertoleda.com.br | Blog do Gilberto Léda | Maranhão
+Notícias | https://www.meionorte.com | Meio Norte | Piauí
+Notícias | https://180graus.com | 180graus | Piauí
+Notícias | https://www.gp1.com.br | GP1 | Piauí
+Notícias | https://cidadeverde.com | Cidade Verde | Piauí
+Notícias | https://www.portalodia.com | O Dia | Piauí
+Notícias | https://www.portalaz.com.br | Portal AZ | Piauí
+Notícias | https://www.viagora.com.br | Viagora | Piauí
+Notícias | https://oitomeia.com.br | OitoMeia | Piauí
+
+# --- Regionais: Norte e Centro-Oeste ---
+Notícias | https://www.acritica.com | A Crítica | Amazonas
+Notícias | https://d24am.com | D24AM | Amazonas
+Notícias | https://amazonasatual.com.br | Amazonas Atual | Amazonas
+Notícias | https://www.portaldoholanda.com.br | Portal do Holanda | Amazonas
+Notícias | https://d.emtempo.com.br | Em Tempo | Amazonas
+Notícias | https://bncamazonas.com.br | BNC Amazonas | Amazonas
+Notícias | https://www.oliberal.com | O Liberal | Pará
+Notícias | https://dol.com.br | DOL – Diário do Pará | Pará
+Notícias | https://romanews.com.br | Roma News | Pará
+Notícias | https://www.ver-o-fato.com.br | Ver-o-Fato | Pará
+Notícias | https://ac24horas.com | ac24horas | Acre
+Notícias | https://contilnet.com.br | ContilNet | Acre
+Notícias | https://agazetadoacre.com | A Gazeta do Acre | Acre
+Notícias | https://agencia.ac.gov.br | Agência Acre | Acre
+Notícias | https://www.rondoniadinamica.com | Rondônia Dinâmica | Rondônia
+Notícias | https://rondoniaovivo.com | Rondoniaovivo | Rondônia
+Notícias | https://www.tudorondonia.com | Tudo Rondônia | Rondônia
+Notícias | https://www.diariodaamazonia.com.br | Diário da Amazônia | Rondônia
+Notícias | https://www.newsrondonia.com.br | News Rondônia | Rondônia
+Notícias | https://www.jornaldotocantins.com.br | Jornal do Tocantins | Tocantins
+Notícias | https://afnoticias.com.br | AF Notícias | Tocantins
+Notícias | https://conexaoto.com.br | Conexão Tocantins | Tocantins
+Notícias | https://gazetadocerrado.com.br | Gazeta do Cerrado | Tocantins
+Notícias | https://surgiu.com.br | Surgiu | Tocantins
+Notícias | https://www.diariodecuiaba.com.br | Diário de Cuiabá | Mato Grosso
+Notícias | https://www.rdnews.com.br | RD News | Mato Grosso
+Notícias | https://www.midianews.com.br | MidiaNews | Mato Grosso
+Notícias | https://www.olhardireto.com.br | Olhar Direto | Mato Grosso
+Notícias | https://www.reportermt.com.br | Repórter MT | Mato Grosso
+Notícias | https://www.hipernoticias.com.br | HiperNotícias | Mato Grosso
+Notícias | https://www.gazetadigital.com.br | Gazeta Digital | Mato Grosso
+Notícias | https://www.primeirapagina.com.br | Primeira Página | Mato Grosso
+Notícias | https://www.campograndenews.com.br | Campo Grande News | Mato Grosso do Sul
+Notícias | https://correiodoestado.com.br | Correio do Estado | Mato Grosso do Sul
+Notícias | https://midiamax.uol.com.br | Midiamax | Mato Grosso do Sul
+Notícias | https://www.topmidianews.com.br | TopMídiaNews | Mato Grosso do Sul
+Notícias | https://www.jd1noticias.com | JD1 Notícias | Mato Grosso do Sul
+Notícias | https://oestadoms.com.br | O Estado MS | Mato Grosso do Sul
+Notícias | https://www.douradosnews.com.br | Dourados News | Mato Grosso do Sul
+Notícias | https://www.enfoquems.com.br | Enfoque MS | Mato Grosso do Sul
+Notícias | https://opopular.com.br | O Popular | Goiás
+Notícias | https://www.jornalopcao.com.br | Jornal Opção | Goiás
+Notícias | https://www.maisgoias.com.br | Mais Goiás | Goiás
+Notícias | https://diariodegoias.com.br | Diário de Goiás | Goiás
+Notícias | https://sagresonline.com.br | Sagres | Goiás
+Notícias | https://www.dm.com.br | Diário da Manhã | Goiás
+Notícias | https://www.portal6.com.br | Portal 6 | Goiás
+Notícias | https://www.aredacao.com.br | A Redação | Goiás
+Notícias | https://www.jornaldebrasilia.com.br | Jornal de Brasília | Distrito Federal

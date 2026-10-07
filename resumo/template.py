@@ -4,9 +4,12 @@ preto e branco em cinzas quentes, roxo só em destaque, JetBrains Mono.
 Estrutura:
   - capa: foto do dia (Unsplash, envio/foto_do_dia.py) com a data numa
     "pílula" embaixo, e o título do resumo;
-  - seções por categoria editorial (Tecnologia, Finanças, ...);
+  - as notícias completas (as mais recentes com resumo da IA), em seções
+    por categoria editorial, na ordem da mais recente de cada seção;
   - cada notícia: capa da notícia ACIMA do texto, site de origem (no lugar
     do autor), título e o resumo formatado da IA;
+  - "Mais manchetes": do resto, só site, hora e título, e um link pro hub
+    com o que sobrou;
   - rodapé com link pro hub e onde mudar o horário do resumo.
 
 E-mail HTML é um mundo à parte: Gmail e Outlook ignoram <style> e CSS
@@ -20,8 +23,8 @@ html.escape antes de entrar no HTML (o Markdown do resumo só vira
 """
 import html
 import re
-from datetime import date
-from urllib.parse import urlparse
+from datetime import date, timedelta
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 FUSO_BR = ZoneInfo("America/Sao_Paulo")
@@ -62,7 +65,31 @@ def _url_segura(url):
 
 
 def _host(url):
-    return urlparse(url or "").netloc.removeprefix("www.")
+    p = urlparse(url or "")
+    # fonte lida pelo Google Notícias (q=site:macmagazine.com.br): o site
+    # de verdade é o da busca, não o news.google.com
+    if p.netloc == "news.google.com":
+        site = re.search(r"site:([^\s/]+)", parse_qs(p.query).get("q", [""])[0])
+        if site:
+            return site.group(1).removeprefix("www.")
+    return p.netloc.removeprefix("www.")
+
+
+def _no_brasil(momento):
+    # o banco devolve em UTC; o leitor está no Brasil
+    return momento.astimezone(FUSO_BR) if momento.tzinfo else momento
+
+
+def desde_quando(desde, hoje: date):
+    """"ontem às 07:00", "hoje às 07:00" ou "5/10 às 07:00"."""
+    d = _no_brasil(desde)
+    if d.date() == hoje:
+        dia = "hoje"
+    elif d.date() == hoje - timedelta(days=1):
+        dia = "ontem"
+    else:
+        dia = f"{d.day}/{d.month}"
+    return f"{dia} às {d:%H:%M}"
 
 
 def data_extenso(d: date):
@@ -99,7 +126,7 @@ def resumo_para_html(resumo):
 
 # ------------------------------------------------------------------ partes
 
-def _capa(foto, dia: date, total, fontes):
+def _capa(foto, dia: date, contagem):
     imagem = credito = ""
     if foto and _url_segura(foto["url"]):
         # a foto leva pra página dela no Unsplash
@@ -134,8 +161,8 @@ def _capa(foto, dia: date, total, fontes):
       <tr><td align="center" style="padding: 26px 8px 6px;">
         <h1 style="margin: 0; font-family: {FONTE}; font-size: 30px; line-height: 1.15; font-weight: 800;
                    letter-spacing: -0.5px; color: {PRETO};">Seu resumo do dia</h1>
-        <p style="margin: 10px 0 0; font-family: {FONTE}; font-size: 13px; font-weight: 300; color: {TEXTO};">
-          {total} {'notícia' if total == 1 else 'notícias'} de {fontes} {'fonte' if fontes == 1 else 'fontes'}, já {'resumida' if total == 1 else 'resumidas'} para você
+        <p style="margin: 10px 0 0; font-family: {FONTE}; font-size: 13px; line-height: 1.6; font-weight: 300; color: {TEXTO};">
+          {contagem}
         </p>
       </td></tr>
     </table>"""
@@ -165,9 +192,7 @@ def _noticia(card, ultima):
     favicon = f"https://www.google.com/s2/favicons?domain={_esc(host)}&sz=32"
     quando = ""
     if card.get("published_at"):
-        p = card["published_at"]
-        if p.tzinfo:  # o banco devolve em UTC; o leitor está no Brasil
-            p = p.astimezone(FUSO_BR)
+        p = _no_brasil(card["published_at"])
         quando = f" &nbsp;·&nbsp; {p.day} {MESES[p.month - 1][:3]}, {p:%H:%M}"
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -189,21 +214,64 @@ def _noticia(card, ultima):
     </table>"""
 
 
-def montar_email_html(cards_por_categoria: dict, data: date, foto=None) -> str:
-    """cards_por_categoria: {categoria: [card, ...]} na ordem das seções.
-    card: title, url, fonte, fonte_url, image_url, published_at, resumo.
+def _manchetes(itens, restantes):
+    """Do que não coube nas notícias completas: site, hora e título (o
+    título é o link), e no fim um link pro hub com o que sobrou."""
+    linhas = []
+    for c in itens:
+        host = _host(c.get("fonte_url") or c["url"])
+        quando = f" &nbsp;·&nbsp; {_no_brasil(c['published_at']):%H:%M}" if c.get("published_at") else ""
+        linhas.append(f"""
+      <tr><td style="padding: 12px 0; border-top: 1px solid {LINHA};">
+        <p style="margin: 0 0 4px; font-family: {FONTE}; font-size: 10px; color: {CINZA};">
+          <img src="https://www.google.com/s2/favicons?domain={_esc(host)}&sz=32" width="12" height="12" alt=""
+               style="vertical-align: -2px; border-radius: 2px; border: 0;">
+          &nbsp;<strong style="color: {TEXTO}; font-weight: 700;">{_esc(c.get('fonte') or host)}</strong>{quando}
+        </p>
+        <a href="{_url_segura(c['url'])}" style="font-family: {FONTE}; font-size: 14px; line-height: 1.45; font-weight: 700;
+           color: {PRETO}; text-decoration: none;">{_esc(c['title'])}</a>
+      </td></tr>""")
+    if restantes:
+        linhas.append(f"""
+      <tr><td style="padding: 14px 0 0; border-top: 1px solid {LINHA};">
+        <a href="{HUB_URL}" style="font-family: {FONTE}; font-size: 12px; font-weight: 700; color: {ROXO}; text-decoration: none;">
+          + {restantes} {'notícia' if restantes == 1 else 'notícias'} no Feed de Notícias &rarr;</a>
+      </td></tr>""")
+    return f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="padding: 40px 0 8px;">
+        <p style="margin: 0; font-family: {FONTE}; font-size: 11px; font-weight: 700; letter-spacing: 2.5px;
+                  text-transform: uppercase; color: {ROXO};">Mais manchetes</p>
+      </td></tr>{''.join(linhas)}
+    </table>"""
+
+
+def montar_email_html(cards_por_categoria: dict, data: date, foto=None, *,
+                      manchetes=(), restantes=0, total=None, desde=None) -> str:
+    """cards_por_categoria: {categoria: [card, ...]}, as notícias completas
+    na ordem das seções. card: title, url, fonte, fonte_url, image_url,
+    published_at, resumo.
+    manchetes: cards sem resumo (só o título aparece); restantes: quantas
+    notícias do período ficaram de fora (viram o link pro hub).
+    total e desde: quantas notícias chegaram no período e desde quando.
     foto: a foto do dia (envio/foto_do_dia.py) ou None."""
     cards = [c for itens in cards_por_categoria.values() for c in itens]
-    total = len(cards)
-    fontes = len({c.get("fonte") or _host(c["url"]) for c in cards})
+    total = total if total is not None else len(cards) + len(manchetes) + restantes
+    contagem = f"{total} {'notícia nova' if total == 1 else 'notícias novas'}"
+    if desde:
+        contagem += f" desde {desde_quando(desde, data)}"
+    if len(cards) + len(manchetes) < total:
+        contagem += ". Aqui estão as mais recentes."
 
     corpo = []
     for categoria, itens in cards_por_categoria.items():
         corpo.append(_secao(categoria))
         corpo.extend(_noticia(c, i == len(itens) - 1) for i, c in enumerate(itens))
+    if manchetes or restantes:
+        corpo.append(_manchetes(manchetes, restantes))
 
     # texto que aparece na prévia da caixa de entrada (fica escondido no corpo)
-    previa = _esc(" · ".join(c["title"] for c in cards[:3]))
+    previa = _esc(" · ".join(c["title"] for c in [*cards, *manchetes][:3]))
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
@@ -220,7 +288,7 @@ def montar_email_html(cards_por_categoria: dict, data: date, foto=None) -> str:
     <tr><td align="center" style="padding: 24px 16px 40px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px;">
         <tr><td>
-          {_capa(foto, data, total, fontes)}
+          {_capa(foto, data, contagem)}
           {''.join(corpo)}
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr><td style="padding: 44px 0 0; border-top: 1px solid {LINHA};">

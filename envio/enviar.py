@@ -5,11 +5,16 @@ sql/024). Roda de hora em hora (workflow "Resumo diário").
 
 Pra cada usuário com o resumo ligado e cujo horário já chegou hoje
 (horário de Brasília), e que ainda não recebeu o de hoje:
-  1. pega os artigos já resumidos pela IA nas últimas 24h, só das
-     coleções escolhidas (ou de todas);
-  2. monta o HTML (resumo/template.py) e salva em `digests`;
-  3. envia via Resend pro e-mail do usuário + a lista de digest_recipients;
-  4. marca `digests.sent_at`.
+  1. pega as notícias que chegaram desde o último resumo (ou, se não
+     houve um ontem, desde ontem no horário escolhido), só das coleções
+     escolhidas (ou de todas), das mais recentes pras mais antigas;
+  2. separa as 10 mais recentes com resumo da IA (notícias completas), 5
+     manchetes do resto (só título e link) e conta o que sobrou (vira um
+     link pro hub). Assim o e-mail tem sempre o mesmo tamanho, siga a
+     pessoa 5 ou 50 fontes;
+  3. monta o HTML (resumo/template.py) e salva em `digests`;
+  4. envia via Resend pro e-mail do usuário + a lista de digest_recipients;
+  5. marca `digests.sent_at`.
 
 "Já chegou" em vez de "é exatamente a hora": o agendamento do GitHub às
 vezes atrasa, e um atraso não pode fazer alguém perder o resumo do dia.
@@ -27,7 +32,8 @@ Uso (de dentro de envio/):
 import argparse
 import os
 import sys
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -43,10 +49,17 @@ from template import data_extenso, montar_email_html  # noqa: E402
 
 FROM_ADDRESS = "Feed de Notícias <onboarding@resend.dev>"
 FUSO = ZoneInfo("America/Sao_Paulo")
-CATEGORIAS = [
-    "Tecnologia", "Finanças", "Humor", "Política", "Ciência",
-    "Saúde", "Esportes", "Entretenimento", "Mundo", "Outros",
-]
+MAX_COMPLETAS = 10        # notícias com resumo da IA, as mais recentes
+MAX_MANCHETES = 5         # do resto, só título e link
+# Uma fonte que publica muito não ocupa o e-mail todo (em 07/10, 8 das 10
+# mais recentes eram do Diário do Comércio). Se faltar variedade, completa
+# com as mais recentes de qualquer fonte.
+MAX_COMPLETAS_POR_FONTE = 3
+MAX_MANCHETES_POR_FONTE = 2
+# Pelo Google Notícias vêm também páginas que não são notícia (o
+# AdoroCinema manda páginas de celebridade: "Milo Quifes"). Manchete sem
+# resumo precisa de pelo menos isso de palavras pra entrar no e-mail.
+MIN_PALAVRAS_MANCHETE = 4
 
 
 def usuarios_no_horario(conn, agora, forcar=False, usuario=None):
@@ -73,8 +86,25 @@ def usuarios_no_horario(conn, agora, forcar=False, usuario=None):
         return cur.fetchall()
 
 
-def artigos_do_resumo(conn, user_id, topic_ids):
-    """Artigos já resumidos pela IA nas últimas 24h, das coleções escolhidas."""
+def inicio_do_periodo(conn, usuario, agora):
+    """Desde quando entram notícias: o último resumo enviado ou, se não
+    houve um desde ontem, ontem no horário escolhido (envio às 7h ->
+    notícias que chegaram desde as 7h de ontem)."""
+    ontem_no_horario = (agora - timedelta(days=1)).replace(
+        hour=usuario["hora_envio"], minute=0, second=0, microsecond=0
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            "select max(sent_at) from digests where user_id = %s and sent_at is not null",
+            (usuario["id"],),
+        )
+        ultimo = cur.fetchone()[0]
+    return max(ultimo, ontem_no_horario) if ultimo else ontem_no_horario
+
+
+def noticias_do_periodo(conn, user_id, topic_ids, desde):
+    """Notícias que chegaram desde `desde`, das coleções escolhidas, mais
+    recentes primeiro. Com ou sem resumo: as sem resumo viram manchete."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
@@ -85,18 +115,49 @@ def artigos_do_resumo(conn, user_id, topic_ids):
             join sources s on s.id = a.source_id
             join topics t on t.id = s.topic_id
             where t.user_id = %(user_id)s
-              and a.ai_summary is not null
-              and a.collected_at > now() - interval '24 hours'
+              and a.collected_at >= %(desde)s
               and (%(topic_ids)s::uuid[] is null or t.id = any(%(topic_ids)s::uuid[]))
-            order by a.published_at desc nulls last
+            order by coalesce(a.published_at, a.collected_at) desc
             """,
-            {"user_id": user_id, "topic_ids": topic_ids},
+            {"user_id": user_id, "topic_ids": topic_ids, "desde": desde},
         )
         return cur.fetchall()
 
 
+def _mais_recentes(lista, limite, por_fonte):
+    """As `limite` primeiras de `lista` (já das mais recentes pras mais
+    antigas), no máximo `por_fonte` de cada fonte; se faltar variedade,
+    completa com as mais recentes que sobraram. Mantém a ordem."""
+    indices, contagem = [], Counter()
+    for i, n in enumerate(lista):
+        if len(indices) == limite:
+            break
+        if contagem[n["fonte"]] < por_fonte:
+            indices.append(i)
+            contagem[n["fonte"]] += 1
+    for i in range(len(lista)):
+        if len(indices) == limite:
+            break
+        if i not in indices:
+            indices.append(i)
+    return [lista[i] for i in sorted(indices)]
+
+
+def separar(noticias):
+    """(completas, manchetes, quantas sobraram). `noticias` já vem das
+    mais recentes pras mais antigas."""
+    completas = _mais_recentes([n for n in noticias if n["resumo"]], MAX_COMPLETAS, MAX_COMPLETAS_POR_FONTE)
+    escolhidas = {id(n) for n in completas}
+    resto = [n for n in noticias if id(n) not in escolhidas]
+    candidatas = [n for n in resto if n["resumo"] or len(n["title"].split()) >= MIN_PALAVRAS_MANCHETE]
+    manchetes = _mais_recentes(candidatas, MAX_MANCHETES, MAX_MANCHETES_POR_FONTE)
+    return completas, manchetes, len(resto) - len(manchetes)
+
+
 def agrupar_por_categoria(cards):
-    grupos = {categoria: [] for categoria in CATEGORIAS}
+    """Seções na ordem da notícia mais recente de cada uma (os cards já
+    vêm dos mais recentes pros mais antigos)."""
+    grupos = {}
     for card in cards:
         grupos.setdefault(card["categoria"] or "Outros", []).append(card)
     return {categoria: itens for categoria, itens in grupos.items() if itens}
@@ -154,13 +215,22 @@ def main():
         print(f"{agora:%d/%m %H:%M} (Brasília): {len(usuarios)} usuário(s) com resumo pra enviar.")
 
         for usuario in usuarios:
-            artigos = artigos_do_resumo(conn, usuario["id"], usuario["topic_ids"])
-            print(f"- {usuario['email']} ({usuario['hora_envio']}h): {len(artigos)} artigo(s)")
-            if not artigos:
-                print("  nada novo nas últimas 24h, pulando (sem e-mail vazio)")
+            desde = inicio_do_periodo(conn, usuario, agora)
+            noticias = noticias_do_periodo(conn, usuario["id"], usuario["topic_ids"], desde)
+            completas, manchetes, restantes = separar(noticias)
+            print(
+                f"- {usuario['email']} ({usuario['hora_envio']}h): {len(noticias)} notícia(s) desde "
+                f"{desde.astimezone(FUSO):%d/%m %H:%M}; {len(completas)} completa(s), "
+                f"{len(manchetes)} manchete(s), {restantes} no link pro hub"
+            )
+            if not noticias:
+                print("  nada novo desde o último resumo, pulando (sem e-mail vazio)")
                 continue
 
-            html = montar_email_html(agrupar_por_categoria(artigos), agora.date(), foto)
+            html = montar_email_html(
+                agrupar_por_categoria(completas), agora.date(), foto,
+                manchetes=manchetes, restantes=restantes, total=len(noticias), desde=desde,
+            )
             para = destinatarios(conn, usuario)
             conn.commit()  # leituras feitas: não segura transação durante o envio
             if args.simular:

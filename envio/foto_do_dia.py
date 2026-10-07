@@ -20,12 +20,28 @@ from psycopg2.extras import RealDictCursor
 
 API = "https://api.unsplash.com"
 UTM = "utm_source=feed_de_noticias&utm_medium=referral"
-# Um tema por dia, em rodízio: dá variedade sem depender de sorte
-TEMAS = ["architecture", "city", "nature", "landscape", "ocean", "mountains", "street", "minimal", "forest", "desert"]
+# Só fotos das categorias (topics) "Arquitetura e interiores" e "Viagem"
+# do Unsplash. A busca de foto aleatória pede o id do topic, então o id é
+# buscado pelo nome (slug) antes. Se isso falhar, cai numa busca por
+# palavra, alternando os dois temas por dia.
+TOPICS = ["architecture-interior", "travel"]
+TEMAS_RESERVA = ["architecture", "travel"]
 
 
 def _com_utm(url):
     return f"{url}{'&' if '?' in url else '?'}{UTM}"
+
+
+def _ids_dos_topics(cabecalhos):
+    ids = []
+    for slug in TOPICS:
+        try:
+            resp = requests.get(f"{API}/topics/{slug}", headers=cabecalhos, timeout=10)
+            resp.raise_for_status()
+            ids.append(resp.json()["id"])
+        except Exception as erro:
+            print(f"(topic {slug} do Unsplash não encontrado: {erro})")
+    return ids
 
 
 def foto_do_dia(conn, dia):
@@ -43,9 +59,13 @@ def foto_do_dia(conn, dia):
 
     cabecalhos = {"Authorization": f"Client-ID {chave}", "Accept-Version": "v1"}
     try:
+        filtro = {"query": TEMAS_RESERVA[dia.toordinal() % len(TEMAS_RESERVA)]}
+        ids = _ids_dos_topics(cabecalhos)
+        if ids:
+            filtro = {"topics": ",".join(ids)}
         resp = requests.get(
             f"{API}/photos/random",
-            params={"query": TEMAS[dia.toordinal() % len(TEMAS)], "orientation": "landscape", "content_filter": "high"},
+            params={**filtro, "orientation": "landscape", "content_filter": "high"},
             headers=cabecalhos,
             timeout=10,
         )

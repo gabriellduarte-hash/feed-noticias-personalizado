@@ -4,11 +4,17 @@ de notícias ou scraping bruto) e insere em `articles`. A deduplicação é feit
 próprio banco, via `on conflict (source_id, url) do nothing` (unique por
 fonte desde o sql/023: duas fontes com o mesmo feed têm cada uma a sua
 cópia dos artigos).
+
+Fonte que acabou de ser seguida (ainda sem nenhum artigo): a primeira
+coleta traz só as notícias das últimas 24 horas. Se não houver nenhuma
+(fonte que publica pouco), traz as mais recentes, pra fonte não ficar
+vazia. Daí em diante, tudo o que for novo.
 """
 import argparse
 import html
 import re
 import time
+from datetime import datetime, timedelta, timezone
 import urllib.robotparser as robotparser
 from urllib.parse import urlparse
 
@@ -19,10 +25,13 @@ from psycopg2.extras import RealDictCursor
 
 from alternativas import eh_google_news, entradas_do_site, ler_sitemap, limpar_titulo_google_news, url_google_news
 from db import get_connection
+from texto import texto_da_pagina, texto_do_rss
 
 USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
 PAUSA_ENTRE_FONTES_SEGUNDOS = 1.5
 MAX_MATERIAS_SITEMAP = 10  # de cada sitemap, baixa o texto só das mais recentes
+PRIMEIRA_COLETA_HORAS = 24
+PRIMEIRA_COLETA_RESERVA = 5  # sem nada nas últimas 24h: as N mais recentes
 REGEX_PRIMEIRA_IMG = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
 REGEX_TAG_HTML = re.compile(r"<[^>]+>")
 
@@ -42,7 +51,8 @@ def buscar_fontes(conn, fonte_id=None, so_sem_artigos=False):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
-            select s.id, s.topic_id, s.url, s.type
+            select s.id, s.topic_id, s.url, s.type,
+                   exists (select 1 from articles a where a.source_id = s.id) as tem_artigos
             from sources s
             where (%(fonte)s::uuid is null or s.id = %(fonte)s::uuid)
               and (not %(sem_artigos)s or not exists (select 1 from articles a where a.source_id = s.id))
@@ -113,7 +123,7 @@ def coletar_rss(source):
             # "resumo" dele é só um link repetindo o título, então descarta
             "title": limpar_titulo_google_news(titulo) if google_news else titulo,
             "url": entry.get("link"),
-            "content": None if google_news else limpar_html(entry.get("summary", "")),
+            "content": None if google_news else texto_do_rss(entry),
             "published_at": publicado,
             "author": entry.get("author"),  # nem todo feed informa; fica None se não tiver
             "image_url": extrair_imagem_rss(entry),
@@ -154,7 +164,7 @@ def coletar_scrape(source):
     resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=10)
     resp.raise_for_status()
 
-    texto = trafilatura.extract(resp.text)
+    texto = texto_da_pagina(resp.text)
     if not texto:
         return []
 
@@ -195,7 +205,7 @@ def coletar_sitemap(source, conn):
             try:
                 resp = requests.get(item["url"], headers={"User-Agent": USER_AGENT}, timeout=10)
                 resp.raise_for_status()
-                texto = trafilatura.extract(resp.text)
+                texto = texto_da_pagina(resp.text)
                 metadata = trafilatura.extract_metadata(resp.text)
                 if metadata:
                     imagem = imagem or metadata.image
@@ -212,6 +222,29 @@ def coletar_sitemap(source, conn):
             "image_url": imagem,
         })
     return artigos
+
+
+def _data_do_artigo(artigo):
+    valor = artigo.get("published_at")
+    if isinstance(valor, datetime):
+        return valor if valor.tzinfo else valor.replace(tzinfo=timezone.utc)
+    if isinstance(valor, str):
+        try:  # "2026-10-07 18:25:00", do published_parsed do RSS (em UTC)
+            return datetime.strptime(valor[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def so_recentes(artigos):
+    """Primeira coleta de uma fonte: as das últimas 24h (e as sem data, que
+    não dá pra saber); sem nenhuma, as PRIMEIRA_COLETA_RESERVA mais recentes."""
+    limite = datetime.now(timezone.utc) - timedelta(hours=PRIMEIRA_COLETA_HORAS)
+    recentes = [a for a in artigos if (_data_do_artigo(a) or limite) >= limite]
+    if recentes:
+        return recentes
+    com_data = sorted(artigos, key=lambda a: _data_do_artigo(a) or limite, reverse=True)
+    return com_data[:PRIMEIRA_COLETA_RESERVA]
 
 
 def salvar_artigos(conn, source_id, artigos):
@@ -267,6 +300,11 @@ def main():
             except Exception as erro:
                 print(f"  erro ao coletar {source['url']}: {erro}")
                 continue
+
+            if not source["tem_artigos"]:
+                total = len(artigos)
+                artigos = so_recentes(artigos)
+                print(f"  primeira coleta: {len(artigos)} de {total} (últimas {PRIMEIRA_COLETA_HORAS}h)")
 
             novos = salvar_artigos(conn, source["id"], artigos)
             print(f"  {len(artigos)} artigo(s) encontrados, {novos} novo(s) salvos.")

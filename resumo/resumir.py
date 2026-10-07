@@ -2,10 +2,12 @@
 Gera um resumo por notícia com a API do Gemini e classifica cada uma numa
 categoria editorial fixa (Tecnologia, Finanças, etc.). Duas fases:
 
-  1. artigos das fontes dos usuários (`articles`): resumo + categoria —
-     sempre primeiro, é o que vai pro feed e pro e-mail de cada um;
+  1. artigos das fontes dos usuários (`articles`): categoria sempre, e
+     resumo só se tiver texto (TEXTO_MINIMO) — sempre primeiro, é o que
+     vai pro feed e pro e-mail de cada um;
   2. notícias do catálogo (`catalog_articles`, aba Explorar): só o resumo
-     (a categoria vem da fonte), com teto por hora por causa do custo.
+     (a categoria vem da fonte), só das que têm texto, com teto por hora
+     por causa do custo.
 
 O resumo sai em Markdown simples (parágrafos, **negrito** nos pontos
 importantes, "> citação — autor" quando houver). O hub e o e-mail
@@ -48,7 +50,11 @@ MAX_POR_RODADA = 120              # artigos dos usuários
 # Catálogo: mil ou mais notícias novas por dia. A ~US$ 0,001 por resumo,
 # 40/hora dá no máximo ~US$ 29/mês. Baixe pra gastar menos.
 MAX_CATALOGO_POR_RODADA = 40
-TEXTO_MINIMO_CATALOGO = 400       # resumir só um título gera texto vazio de sentido
+# Resumo só com texto de verdade. Abaixo disso (só o título, como nas
+# notícias que chegam pelo Google Notícias, ou uma frase do feed), a IA
+# "resume" o título e pode inventar detalhe. A notícia dos usuários
+# ainda é categorizada, mas fica sem resumo: o hub mostra título e link.
+TEXTO_MINIMO = 400
 TEMPO_MAXIMO_SEGUNDOS = 11 * 60   # o passo tem 15 min; conferido antes de cada chamada
 MAX_TENTATIVAS_ARTIGO = 3         # depois disso, desiste da notícia
 RESERVA_EXPIRA = "30 minutes"     # reserva de um job que caiu volta a valer
@@ -98,7 +104,7 @@ class ResumoTopico(BaseModel):
 # com notícias diferentes.
 FILTRO_PENDENTES = {
     "articles": "category is null",
-    "catalog_articles": f"ai_summary is null and length(content) >= {TEXTO_MINIMO_CATALOGO}",
+    "catalog_articles": f"ai_summary is null and length(content) >= {TEXTO_MINIMO}",
 }
 
 # Detalhes pra montar o pedido à IA. "grupo" é o contexto do lote: o
@@ -166,9 +172,15 @@ def reservar_lote(conn, tabela, limite):
 
 # ------------------------------------------------------------------ IA
 
+def tem_texto(artigo):
+    return len(artigo["content"] or "") >= TEXTO_MINIMO
+
+
 def montar_input(grupo, artigos):
     partes = [
         f"Artigo {i + 1}: {a['title']}\n{(a['content'] or '')[:MAX_CARACTERES_POR_ARTIGO]}"
+        if tem_texto(a)
+        else f"Artigo {i + 1}: {a['title']}\n(sem texto: só classifique, com o resumo vazio)"
         for i, a in enumerate(artigos)
     ]
     corpo = "\n\n".join(partes)
@@ -230,7 +242,9 @@ def casar_resumos(artigos, resposta: ResumoTopico):
         if item is None:
             print(f"  aviso: o modelo não devolveu resumo pro artigo {i}, fica pra depois.")
             continue
-        casados.append({"id": artigo["id"], "resumo": item.resumo.strip(), "categoria": item.categoria})
+        # sem texto suficiente, o que a IA escrever é paráfrase do título: descarta
+        resumo = item.resumo.strip() if tem_texto(artigo) else None
+        casados.append({"id": artigo["id"], "resumo": resumo or None, "categoria": item.categoria})
     return casados
 
 

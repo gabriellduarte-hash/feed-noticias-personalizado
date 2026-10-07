@@ -1,5 +1,6 @@
 feedparser
 trafilatura
+lxml
 requests
 psycopg2-binary
 python-dotenv

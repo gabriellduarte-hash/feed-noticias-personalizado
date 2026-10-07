@@ -4,9 +4,14 @@ texto ou sem imagem, e guarda o texto completo e a imagem (trafilatura).
 Vale pras notícias das fontes dos usuários (articles) e do catálogo
 (catalog_articles, aba Explorar). Precisa do sql/025.
 
-Por que: a maioria dos feeds manda só um resumo curto, e sitemap não
-manda texto nenhum. Com o texto inteiro, a leitura dentro do hub fica
-completa e o resumo da IA (resumir.py, que roda depois) fica melhor.
+Por que: alguns feeds mandam só um resumo curto, e sitemap não manda
+texto nenhum. Com o texto inteiro, a leitura dentro do hub fica completa
+e o resumo da IA (resumir.py, que roda depois) fica melhor.
+
+O texto do RSS vale mais que o da página: a página vem com menus,
+anúncios e links pra outras matérias. Então a página só substitui o
+texto quando o feed mandou pouco (TEXTO_CURTO); se o feed já trouxe a
+matéria e só faltou a imagem, o texto do feed fica.
 
 Regras:
   - cada notícia é tentada uma vez só (enriquecido_em), com ou sem sucesso;
@@ -31,10 +36,10 @@ from psycopg2.extras import RealDictCursor
 
 from coletar import USER_AGENT
 from db import get_connection
+from texto import texto_da_pagina
 
 POR_RODADA = 60          # por tabela; a coleta roda de hora em hora
 TEXTO_CURTO = 600        # abaixo disso, o "texto" é só o resumo do feed
-MAX_CARACTERES = 12000
 PAUSA_SEGUNDOS = 0.5
 
 TABELAS = {"articles": "fontes dos usuários", "catalog_articles": "catálogo"}
@@ -83,17 +88,17 @@ class Robots:
 def extrair(url):
     resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=12)
     resp.raise_for_status()
-    texto = trafilatura.extract(resp.text, include_comments=False, include_tables=False) or ""
     meta = trafilatura.extract_metadata(resp.text)
     return {
-        "texto": texto[:MAX_CARACTERES],
+        "texto": texto_da_pagina(resp.text) or "",
         "imagem": meta.image if meta and meta.image else None,
         "autor": meta.author if meta and meta.author else None,
     }
 
 
 def gravar(conn, tabela, noticia, achado):
-    novo_texto = achado["texto"] if len(achado["texto"]) > len(noticia["content"] or "") else None
+    atual = noticia["content"] or ""
+    novo_texto = achado["texto"] if len(atual) < TEXTO_CURTO and len(achado["texto"]) > len(atual) else None
     with conn.cursor() as cur:
         cur.execute(
             f"""

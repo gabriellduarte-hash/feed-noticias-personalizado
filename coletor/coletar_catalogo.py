@@ -3,7 +3,8 @@ Coleta as notícias das fontes do catálogo (feed_catalog) pra aba
 "Explorar" do hub, gravando em catalog_articles (sql/020).
 
 Diferente do coletar.py:
-  - lê de feed_catalog (todas as fontes do catálogo), não de sources;
+  - lê de feed_catalog, não de sources, e só as fontes da vitrine (sql/031):
+    o resto do catálogo é só mapa, coletado quando alguém segue;
   - grava em catalog_articles, que é compartilhada entre todos os usuários;
   - não faz scraping nem resumo por IA: o catálogo só tem feeds RSS, e
     resumir dezenas de fontes todo dia custaria caro sem necessidade;
@@ -24,17 +25,19 @@ from urllib.parse import urlparse
 
 from alternativas import eh_google_news, entradas_do_site, ler_sitemap, limpar_titulo_google_news, url_google_news
 from coletar import USER_AGENT, extrair_imagem_rss, limpar_html
+from texto import texto_do_rss
 from db import get_connection
 
 PAUSA_ENTRE_FONTES_SEGUNDOS = 1.0
 MAX_POR_FONTE = 20          # as mais recentes de cada feed, por rodada
-MAX_CARACTERES_TEXTO = 4000  # o resumo do RSS; não precisa do texto inteiro
 DIAS_GUARDADOS = 14
 
 
 def buscar_catalogo(conn):
+    """Só as fontes da vitrine (sql/031). O resto do catálogo é mapa: só é
+    coletado quando alguém segue (aí vira fonte normal, no coletar.py)."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("select id, name, url, kind from feed_catalog order by name")
+        cur.execute("select id, name, url, kind from feed_catalog where vitrine order by name")
         return cur.fetchall()
 
 
@@ -103,7 +106,7 @@ def extrair_noticias(entradas, google_news=False):
             "title": limpar_titulo_google_news(titulo) if google_news else titulo,
             "url": link,
             # no Google Notícias o "resumo" é só um link repetindo o título
-            "content": None if google_news else (limpar_html(entry.get("summary", ""))[:MAX_CARACTERES_TEXTO] or None),
+            "content": None if google_news else texto_do_rss(entry),
             "author": entry.get("author"),
             "image_url": extrair_imagem_rss(entry),
             "published_at": publicado,

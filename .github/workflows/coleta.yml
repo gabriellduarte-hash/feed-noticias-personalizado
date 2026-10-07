@@ -53,6 +53,15 @@ jobs:
         timeout-minutes: 10
         continue-on-error: true
 
+      # Tira do texto o que não é matéria (anúncio, cookies, "siga no
+      # WhatsApp", trechos que o site repete em toda matéria). Antes do
+      # resumo, pra IA ler o texto limpo (sql/029).
+      - name: Limpar textos
+        working-directory: coletor
+        run: python limpar_textos.py
+        timeout-minutes: 5
+        continue-on-error: true
+
       # o próprio resumir.py para em ~12 min (o que sobrar fica pra próxima hora)
       - name: Resumir e categorizar com IA
         working-directory: resumo

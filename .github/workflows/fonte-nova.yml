@@ -56,6 +56,16 @@ jobs:
           fi
         continue-on-error: true
 
+      - name: Limpar textos
+        working-directory: coletor
+        run: |
+          if [ -n "$FONTE_ID" ]; then
+            python limpar_textos.py --fonte "$FONTE_ID" --dias 30
+          else
+            python limpar_textos.py
+          fi
+        continue-on-error: true
+
       - name: Resumir e categorizar com IA
         working-directory: resumo
         run: python resumir.py

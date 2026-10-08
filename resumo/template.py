@@ -246,6 +246,25 @@ def _manchetes(itens, restantes):
     </table>"""
 
 
+def _apoio():
+    """Pedido de apoio ao projeto (PIX), no fim: o pagamento em si fica na
+    página /apoiar do hub (e-mail não copia código nem gera QR)."""
+    return f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td align="center" style="padding: 44px 8px 36px; border-top: 1px solid {LINHA};">
+        <p style="margin: 0 0 8px; font-size: 24px; line-height: 1;">&#9749;</p>
+        <p style="margin: 0 0 8px; font-family: {FONTE}; font-size: 16px; font-weight: 800; color: {PRETO};">Gostou do resumo de hoje?</p>
+        <p style="margin: 0 0 18px; font-family: {FONTE}; font-size: 12px; line-height: 1.7; color: {TEXTO};">
+          Este projeto é independente e não depende de publicidade para funcionar.<br>
+          Se ele foi útil para você, ajude a mantê-lo.
+        </p>
+        <a href="{HUB_URL}/apoiar" style="display: inline-block; padding: 11px 22px; border-radius: 8px; background: {ROXO};
+           font-family: {FONTE}; font-size: 13px; font-weight: 700; color: #ffffff; text-decoration: none;">Apoiar com PIX &rarr;</a>
+        <p style="margin: 16px 0 0; font-family: {FONTE}; font-size: 11px; color: {CINZA};">Obrigado por apoiar o projeto &#10084;&#65039;</p>
+      </td></tr>
+    </table>"""
+
+
 def montar_email_html(cards_por_categoria: dict, data: date, foto=None, *,
                       manchetes=(), restantes=0, total=None, desde=None) -> str:
     """cards_por_categoria: {categoria: [card, ...]}, as notícias completas
@@ -290,8 +309,9 @@ def montar_email_html(cards_por_categoria: dict, data: date, foto=None, *,
         <tr><td>
           {_capa(foto, data, contagem)}
           {''.join(corpo)}
+          {_apoio()}
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr><td style="padding: 44px 0 0; border-top: 1px solid {LINHA};">
+            <tr><td style="padding: 32px 0 0; border-top: 1px solid {LINHA};">
               <p style="margin: 0 0 6px; font-family: {FONTE}; font-size: 11px; line-height: 1.7; color: {CINZA};">
                 Você recebe este resumo porque segue fontes no Feed de Notícias.
               </p>

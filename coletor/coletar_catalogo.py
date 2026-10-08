@@ -23,7 +23,14 @@ from psycopg2.extras import RealDictCursor
 
 from urllib.parse import urlparse
 
-from alternativas import eh_google_news, entradas_do_site, ler_sitemap, limpar_titulo_google_news, url_google_news
+from alternativas import (
+    eh_google_news,
+    entradas_do_site,
+    eh_noticia_do_google_news,
+    ler_sitemap,
+    limpar_titulo_google_news,
+    url_google_news,
+)
 from coletar import USER_AGENT, extrair_imagem_rss, limpar_html
 from texto import texto_do_rss
 from db import get_connection
@@ -92,6 +99,8 @@ def noticias_do_sitemap(url):
 
 
 def extrair_noticias(entradas, google_news=False):
+    if google_news:
+        entradas = [e for e in entradas if eh_noticia_do_google_news(e.get("title", ""))]
     noticias = []
     for entry in entradas[:MAX_POR_FONTE]:
         link = entry.get("link")

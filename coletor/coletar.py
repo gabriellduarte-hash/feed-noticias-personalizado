@@ -23,11 +23,18 @@ import requests
 import trafilatura
 from psycopg2.extras import RealDictCursor
 
-from alternativas import eh_google_news, entradas_do_site, ler_sitemap, limpar_titulo_google_news, url_google_news
+from alternativas import (
+    eh_google_news,
+    entradas_do_site,
+    eh_noticia_do_google_news,
+    ler_sitemap,
+    limpar_titulo_google_news,
+    url_google_news,
+)
 from db import get_connection
-from texto import texto_da_pagina, texto_do_rss
+from texto import consertar_acentos, texto_da_pagina, texto_do_rss
 
-USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
+USER_AGENT = "DailyPaperBot/0.1 (uso pessoal - estudo)"
 PAUSA_ENTRE_FONTES_SEGUNDOS = 1.5
 MAX_MATERIAS_SITEMAP = 10  # de cada sitemap, baixa o texto só das mais recentes
 PRIMEIRA_COLETA_HORAS = 24
@@ -41,7 +48,7 @@ def limpar_html(texto):
     (ex.: G1) mandam o resumo com HTML de verdade dentro (<img>, <br>),
     diferente de outros que já vêm em texto puro."""
     sem_tags = REGEX_TAG_HTML.sub(" ", texto or "")
-    texto_limpo = html.unescape(sem_tags)
+    texto_limpo = consertar_acentos(html.unescape(sem_tags))
     return " ".join(texto_limpo.split())
 
 
@@ -62,14 +69,23 @@ def buscar_fontes(conn, fonte_id=None, so_sem_artigos=False):
         return cur.fetchall()
 
 
-def extrair_imagem_rss(entry):
-    """Tenta achar uma capa pro artigo, em ordem de confiabilidade.
+def imagem_de_destaque(html_texto):
+    """A primeira <img> do HTML, só se vier ANTES do texto (a imagem de
+    destaque que o WordPress põe no começo). Imagem no meio do texto
+    costuma ser de outra matéria citada (a CNN Brasil põe miniaturas de
+    200px de "leia também"): aí é melhor ficar sem e deixar o
+    enriquecimento pegar a capa da própria página (og:image)."""
+    match = REGEX_PRIMEIRA_IMG.search(html_texto or "")
+    if not match:
+        return None
+    antes = limpar_html(html_texto[: match.start()])
+    return match.group(1) if len(antes) < 20 else None
 
-    Nem todo feed expõe isso da mesma forma — testado na prática com
-    nossas próprias fontes, media_thumbnail/media_content/enclosures
-    vieram vazios no feed que já usamos, por isso o fallback final
-    (primeira <img> dentro do HTML do resumo).
-    """
+
+def extrair_imagem_rss(entry):
+    """Tenta achar uma capa pro artigo, em ordem de confiabilidade:
+    media:thumbnail, media:content, enclosure e, por último, a imagem de
+    destaque do começo do texto."""
     thumbs = entry.get("media_thumbnail")
     if thumbs:
         return thumbs[0].get("url")
@@ -82,8 +98,11 @@ def extrair_imagem_rss(entry):
         if enclosure.get("type", "").startswith("image/"):
             return enclosure.get("href")
 
-    match = REGEX_PRIMEIRA_IMG.search(entry.get("summary", "") or "")
-    return match.group(1) if match else None
+    for conteudo in [*(c.get("value", "") for c in entry.get("content") or []), entry.get("summary", "")]:
+        imagem = imagem_de_destaque(conteudo)
+        if imagem:
+            return imagem
+    return None
 
 
 def baixar_feed(url):
@@ -112,6 +131,8 @@ def coletar_rss(source):
         print("  tentando pelo Google Notícias")
         entradas = entradas_do_site(baixar_feed(url_google_news(site)).entries, site)
         google_news = True
+    if google_news:
+        entradas = [e for e in entradas if eh_noticia_do_google_news(e.get("title", ""))]
     artigos = []
     for entry in entradas:
         publicado = None
@@ -164,11 +185,11 @@ def coletar_scrape(source):
     resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=10)
     resp.raise_for_status()
 
-    texto = texto_da_pagina(resp.text)
+    texto = texto_da_pagina(resp.content)
     if not texto:
         return []
 
-    metadata = trafilatura.extract_metadata(resp.text)
+    metadata = trafilatura.extract_metadata(resp.content)
     titulo = metadata.title if metadata and metadata.title else url
     autor = metadata.author if metadata and metadata.author else None
     imagem = metadata.image if metadata and metadata.image else None
@@ -205,8 +226,8 @@ def coletar_sitemap(source, conn):
             try:
                 resp = requests.get(item["url"], headers={"User-Agent": USER_AGENT}, timeout=10)
                 resp.raise_for_status()
-                texto = texto_da_pagina(resp.text)
-                metadata = trafilatura.extract_metadata(resp.text)
+                texto = texto_da_pagina(resp.content)
+                metadata = trafilatura.extract_metadata(resp.content)
                 if metadata:
                     imagem = imagem or metadata.image
                     autor = metadata.author

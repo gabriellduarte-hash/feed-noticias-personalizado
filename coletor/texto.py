@@ -28,6 +28,7 @@ gravado. Mudou uma, muda a outra.
 import html
 import re
 
+import ftfy
 import trafilatura
 from lxml import etree
 from lxml import html as lhtml
@@ -196,11 +197,19 @@ def eh_lixo(paragrafo):
     return len(p) <= CHAMADA_MAX_CARACTERES and bool(CHAMADAS.search(p) or EMOJI_DE_CHAMADA.match(p))
 
 
+def consertar_acentos(texto):
+    """"simbÃ³lico" -> "simbólico": texto em UTF-8 que alguém leu como
+    Latin-1 (página sem a codificação no cabeçalho, ou o próprio feed do
+    site já vem assim). Não mexe em texto que já está certo."""
+    return ftfy.fix_encoding(texto) if texto else texto
+
+
 def limpar_texto(texto, repetidos=frozenset()):
-    """Tira os parágrafos de lixo, os repetidos do site e duplicatas."""
+    """Conserta acentos e tira os parágrafos de lixo, os repetidos do site
+    e duplicatas."""
     if not texto:
         return texto
-    texto = RODAPE_WORDPRESS.sub("", texto)
+    texto = RODAPE_WORDPRESS.sub("", consertar_acentos(texto))
     saida, vistos = [], set()
     for linha in texto.split("\n"):
         p = _linha(linha)
@@ -223,6 +232,10 @@ def texto_do_rss(entry):
 
 
 def texto_da_pagina(pagina_html):
+    """pagina_html: de preferência os bytes da resposta (resp.content), pro
+    trafilatura descobrir a codificação pela própria página. Com resp.text,
+    o requests assume Latin-1 quando o servidor não diz a codificação, e
+    "simbólico" vira "simbÃ³lico"."""
     texto = trafilatura.extract(
         pagina_html, include_comments=False, include_tables=False, favor_precision=True
     )

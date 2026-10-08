@@ -41,7 +41,7 @@ import requests
 
 # Mesmo User-Agent do coletor: se um site bloquear aqui, vai bloquear lá
 # também, então é melhor descobrir agora do que depois de catalogado.
-USER_AGENT = "FeedNoticiasBot/0.1 (uso pessoal - estudo)"
+USER_AGENT = "DailyPaperBot/0.1 (uso pessoal - estudo)"
 TIMEOUT_SEGUNDOS = 15
 # Sites diferentes em paralelo (são centenas; um de cada vez levava horas).
 # Cada site ainda é visitado por uma conexão só, sem pressa.

@@ -23,6 +23,10 @@ jobs:
       FEED_TO_EMAIL: ${{ secrets.FEED_TO_EMAIL }}
       # Foto de capa do e-mail (opcional: sem ela, o e-mail sai sem foto)
       UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+      # Período de testes: envia pelo Gmail do projeto (senha de app). Sem
+      # esses dois, envia pelo Resend.
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
 

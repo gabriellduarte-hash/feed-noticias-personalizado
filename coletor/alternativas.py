@@ -156,6 +156,24 @@ def entradas_do_site(entradas, url_site):
     ]
 
 
+# Pelo Google Notícias, a busca "site:" traz também páginas que não são
+# notícia: listagens ("Notícias de Filmes - Página 1246"), páginas de
+# pessoa ou de filme ("Milo Quifes", "Coração de Lona") e de streaming
+# ("Ver Homem-Aranha online"), como no AdoroCinema.
+PAGINA_DE_LISTAGEM = re.compile(r"(^|\s)(p[áa]gina|page)\s+\d+", re.I)
+PAGINA_DE_STREAMING = re.compile(r"^(ver|assistir)\b.*\bonline$", re.I)
+MIN_PALAVRAS_NOTICIA = 4
+
+
+def eh_noticia_do_google_news(titulo):
+    titulo = limpar_titulo_google_news(titulo or "")
+    return not (
+        PAGINA_DE_LISTAGEM.search(titulo)
+        or PAGINA_DE_STREAMING.search(titulo)
+        or len(titulo.split()) < MIN_PALAVRAS_NOTICIA
+    )
+
+
 def limpar_titulo_google_news(titulo):
     """'Manchete qualquer - ge' -> 'Manchete qualquer'."""
     return re.sub(r"\s+-\s+[^-]{1,60}$", "", titulo or "").strip() or titulo

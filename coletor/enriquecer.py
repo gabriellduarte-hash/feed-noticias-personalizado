@@ -88,9 +88,9 @@ class Robots:
 def extrair(url):
     resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=12)
     resp.raise_for_status()
-    meta = trafilatura.extract_metadata(resp.text)
+    meta = trafilatura.extract_metadata(resp.content)
     return {
-        "texto": texto_da_pagina(resp.text) or "",
+        "texto": texto_da_pagina(resp.content) or "",
         "imagem": meta.image if meta and meta.image else None,
         "autor": meta.author if meta and meta.author else None,
     }
@@ -111,6 +111,26 @@ def gravar(conn, tabela, noticia, achado):
             """,
             (novo_texto, achado["imagem"], achado["autor"], noticia["id"]),
         )
+
+
+def remover_sumida(conn, tabela, noticia):
+    """A página da notícia não existe mais (404/410: o site tirou do ar).
+    Sem texto nosso pra mostrar, ela só apareceria vazia no feed: sai.
+    Se alguém salvou pra ler depois, fica (com o que tiver)."""
+    if len(noticia["content"] or "") >= TEXTO_CURTO:
+        marcar_tentada(conn, tabela, noticia["id"])
+        return
+    with conn.cursor() as cur:
+        if tabela == "articles":
+            cur.execute(
+                """delete from articles a where a.id = %s
+                   and not exists (select 1 from saved_articles s where s.article_id = a.id)""",
+                (noticia["id"],),
+            )
+        else:
+            cur.execute("delete from catalog_articles where id = %s", (noticia["id"],))
+    conn.commit()
+    marcar_tentada(conn, tabela, noticia["id"])  # se ficou (salva), não tenta de novo
 
 
 def marcar_tentada(conn, tabela, noticia_id):
@@ -149,7 +169,10 @@ def main():
                         print(f"  {dominio} bloqueou (HTTP {status}); pulando esse site nesta rodada")
                         bloqueados.add(dominio)
                     if not args.simular:
-                        marcar_tentada(conn, tabela, n["id"])
+                        if status in (404, 410):
+                            remover_sumida(conn, tabela, n)
+                        else:
+                            marcar_tentada(conn, tabela, n["id"])
                     continue
                 except Exception as erro:
                     print(f"  erro em {n['url'][:70]}: {type(erro).__name__}")

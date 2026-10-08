@@ -147,8 +147,8 @@ def _capa(foto, dia: date, contagem):
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr><td align="center" style="padding: 8px 0 22px;">
-        <p style="margin: 0; font-family: {FONTE}; font-size: 11px; font-weight: 700; letter-spacing: 3px; color: {PRETO};">
-          <span style="color: {ROXO};">●</span>&nbsp;FEED DE NOTÍCIAS
+        <p style="margin: 0; font-family: {FONTE}; font-size: 20px; font-weight: 800; letter-spacing: -0.3px; color: {PRETO};">
+          <span style="color: {ROXO};">{{</span>daily paper<span style="color: {ROXO};">}}</span>
         </p>
       </td></tr>{imagem}
       <tr><td align="center" style="padding: {'18px' if imagem else '4px'} 0 0;">
@@ -235,7 +235,7 @@ def _manchetes(itens, restantes):
         linhas.append(f"""
       <tr><td style="padding: 14px 0 0; border-top: 1px solid {LINHA};">
         <a href="{HUB_URL}" style="font-family: {FONTE}; font-size: 12px; font-weight: 700; color: {ROXO}; text-decoration: none;">
-          + {restantes} {'notícia' if restantes == 1 else 'notícias'} no Feed de Notícias &rarr;</a>
+          + {restantes} {'notícia' if restantes == 1 else 'notícias'} no Daily Paper &rarr;</a>
       </td></tr>""")
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -313,10 +313,10 @@ def montar_email_html(cards_por_categoria: dict, data: date, foto=None, *,
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr><td style="padding: 32px 0 0; border-top: 1px solid {LINHA};">
               <p style="margin: 0 0 6px; font-family: {FONTE}; font-size: 11px; line-height: 1.7; color: {CINZA};">
-                Você recebe este resumo porque segue fontes no Feed de Notícias.
+                Você recebe este resumo porque segue fontes no Daily Paper.
               </p>
               <p style="margin: 0; font-family: {FONTE}; font-size: 11px; line-height: 1.7; color: {CINZA};">
-                <a href="{HUB_URL}" style="color: {PRETO}; font-weight: 700; text-decoration: none;">Abrir o Feed de Notícias</a>
+                <a href="{HUB_URL}" style="color: {PRETO}; font-weight: 700; text-decoration: none;">Abrir o Daily Paper</a>
                 &nbsp;·&nbsp; para mudar o horário ou o que entra no resumo, vá em Configurações &rsaquo; Resumo diário
               </p>
             </td></tr>

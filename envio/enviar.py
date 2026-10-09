@@ -23,7 +23,9 @@ Como envia (um e-mail por destinatário, pra ninguém ver o endereço dos
 outros):
   - SMTP, se SMTP_USER e SMTP_PASSWORD estiverem definidos: no período de
     testes, o Gmail do projeto com uma senha de app. Envia como esse
-    Gmail, pra qualquer pessoa.
+    Gmail, pra qualquer pessoa. Tenta a porta 465 e, se ela falhar, a 587.
+    Se o SMTP não abrir de jeito nenhum, a rodada envia pelo Resend (com
+    um aviso no log do GitHub), pra o resumo não se perder.
   - senão, Resend. Enquanto o remetente for `onboarding@resend.dev` (sem
     domínio verificado), o Resend só entrega pro e-mail da PRÓPRIA conta
     Resend. Por isso FEED_TO_EMAIL continua valendo como destinatário
@@ -209,29 +211,68 @@ class Remetente:
 
     def __init__(self):
         self.usuario = os.environ.get("SMTP_USER", "").strip()
-        senha = "".join(os.environ.get("SMTP_PASSWORD", "").split())  # a senha de app do Google vem com espaços
+        self.senha = "".join(os.environ.get("SMTP_PASSWORD", "").split())  # a senha de app do Google vem com espaços
+        self.host = os.environ.get("SMTP_HOST", "").strip() or "smtp.gmail.com"
         self.smtp = None
-        if self.usuario and senha:
-            self.smtp = smtplib.SMTP_SSL(os.environ.get("SMTP_HOST", "smtp.gmail.com"), 465, timeout=30)
-            self.smtp.login(self.usuario, senha)
-        else:
+        if self.usuario and self.senha:
+            try:
+                self.conectar()
+            except (smtplib.SMTPException, OSError) as erro:
+                # ::warning:: vira um aviso amarelo na página da execução no GitHub
+                print(f"::warning::SMTP indisponível ({type(erro).__name__}: {erro}); esta rodada envia pelo Resend")
+        if not self.smtp:
             resend.api_key = os.environ["RESEND_API_KEY"]
 
+    def conectar(self):
+        """Porta 465 (SSL) e, se ela falhar, 587 (STARTTLS). O log diz em
+        que passo parou. Senha recusada não tenta a outra porta."""
+        ultimo_erro = None
+        for porta in (465, 587):
+            smtp, passo = None, "conectar"
+            try:
+                if porta == 465:
+                    smtp = smtplib.SMTP_SSL(self.host, porta, timeout=30)
+                else:
+                    smtp = smtplib.SMTP(self.host, porta, timeout=30)
+                    passo = "starttls"
+                    smtp.starttls()
+                passo = "login"
+                smtp.login(self.usuario, self.senha)
+                print(f"SMTP: conectado em {self.host}:{porta} como {self.usuario}")
+                self.smtp = smtp
+                return
+            except (smtplib.SMTPException, OSError) as erro:
+                print(f"SMTP: falhou em {self.host}:{porta}, no passo '{passo}': {type(erro).__name__}: {erro}")
+                if smtp:
+                    smtp.close()
+                if isinstance(erro, smtplib.SMTPAuthenticationError):
+                    raise
+                ultimo_erro = erro
+        raise ultimo_erro
+
     def enviar(self, para, assunto, html):
-        if self.smtp:
-            mensagem = EmailMessage()
-            mensagem["From"] = formataddr(("Daily Paper", self.usuario))
-            mensagem["To"] = para
-            mensagem["Subject"] = assunto
-            mensagem.set_content("Seu resumo do dia está em HTML. Abra este e-mail num app que mostre HTML.")
-            mensagem.add_alternative(html, subtype="html")
-            self.smtp.send_message(mensagem)
-        else:
+        if not self.smtp:
             resend.Emails.send({"from": FROM_ADDRESS, "to": [para], "subject": assunto, "html": html})
+            return
+        mensagem = EmailMessage()
+        mensagem["From"] = formataddr(("Daily Paper", self.usuario))
+        mensagem["To"] = para
+        mensagem["Subject"] = assunto
+        mensagem.set_content("Seu resumo do dia está em HTML. Abra este e-mail num app que mostre HTML.")
+        mensagem.add_alternative(html, subtype="html")
+        try:
+            self.smtp.send_message(mensagem)
+        except smtplib.SMTPServerDisconnected:
+            # o Gmail fecha conexão parada: reconecta uma vez e tenta de novo
+            self.conectar()
+            self.smtp.send_message(mensagem)
 
     def fechar(self):
         if self.smtp:
-            self.smtp.quit()
+            try:
+                self.smtp.quit()
+            except (smtplib.SMTPException, OSError):
+                pass  # a conexão já tinha caído; o que foi enviado já está no log
 
 
 def main():

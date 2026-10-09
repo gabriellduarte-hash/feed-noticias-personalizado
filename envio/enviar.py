@@ -237,7 +237,12 @@ class Remetente:
                     passo = "starttls"
                     smtp.starttls()
                 passo = "login"
-                smtp.login(self.usuario, self.senha)
+                # Só AUTH PLAIN: o login() do smtplib, quando a senha é
+                # recusada (535), tenta de novo com AUTH LOGIN, o Gmail
+                # fecha a conexão e o erro vira "Connection unexpectedly
+                # closed", escondendo o motivo real.
+                smtp.ehlo()
+                smtp.auth("PLAIN", lambda desafio=None: f"\0{self.usuario}\0{self.senha}")
                 print(f"SMTP: conectado em {self.host}:{porta} como {self.usuario}")
                 self.smtp = smtp
                 return

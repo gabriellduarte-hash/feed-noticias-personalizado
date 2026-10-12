@@ -7,9 +7,9 @@ Duas fases:
   1. artigos das fontes dos usuários (`articles`): categoria sempre, e
      resumo só se tiver texto (TEXTO_MINIMO) — sempre primeiro, é o que
      vai pro feed e pro e-mail de cada um;
-  2. notícias do catálogo (`catalog_articles`, aba Explorar): só o resumo
-     (a categoria vem da fonte), só das que têm texto, com teto por hora
-     por causa do custo.
+  2. notícias do catálogo (`catalog_articles`, aba Explorar): resumo e
+     categoria (sql/041: o Trending usa a da notícia, não a do site), só
+     das que têm texto, com teto por hora por causa do custo.
 
 O resumo sai em Markdown simples (parágrafos, **negrito** nos pontos
 importantes, "> citação — autor" quando houver). O hub e o e-mail
@@ -285,9 +285,9 @@ def casar_resumos(artigos, resposta: ResumoTopico):
 
 
 def salvar(conn, tabela, casados):
-    """articles: resumo + categoria + palavras-chave. catalog_articles:
-    resumo + palavras-chave (a categoria do catálogo vem da fonte, em
-    feed_catalog)."""
+    """Resumo, categoria e palavras-chave. No catálogo a categoria da
+    notícia (sql/041) fica ao lado da do site (feed_catalog.category): o
+    Trending usa a da notícia, e o filtro da aba Explorar, a do site."""
     with conn.cursor() as cur:
         for c in casados:
             if tabela == "articles":
@@ -297,8 +297,8 @@ def salvar(conn, tabela, casados):
                 )
             else:
                 cur.execute(
-                    "update catalog_articles set ai_summary = %s, palavras_chave = %s where id = %s",
-                    (c["resumo"], c["palavras_chave"], c["id"]),
+                    "update catalog_articles set ai_summary = %s, palavras_chave = %s, category = %s where id = %s",
+                    (c["resumo"], c["palavras_chave"], c["categoria"], c["id"]),
                 )
     conn.commit()
 

@@ -5,6 +5,11 @@ coletado uma vez só, não importa quantas pessoas o sigam: quem segue vê
 as notícias dele. A deduplicação é feita pelo próprio banco, via
 `on conflict (feed_id, url) do nothing`.
 
+Feed que bloqueia as máquinas do GitHub (responde 401/403/429 ou derruba a
+conexão) fica marcado com coletar_pelo_hub (sql/040): daí em diante quem
+coleta é o hub, na Vercel (/api/coletar-bloqueados), chamado no fim da
+coleta de hora em hora. Sites abertos, só que barram servidores de nuvem.
+
 Fonte que acabou de ser seguida (ainda sem nenhum artigo): a primeira
 coleta traz só as notícias das últimas 24 horas. Se não houver nenhuma
 (fonte que publica pouco), traz as mais recentes, pra fonte não ficar
@@ -32,6 +37,7 @@ from alternativas import (
     url_google_news,
 )
 from db import get_connection, resolver_feed
+from manchetes import DIAS_PRA_COMPARAR, separar_repetidas
 from texto import consertar_acentos, texto_da_pagina, texto_do_rss
 
 USER_AGENT = "DailyPaperBot/0.1 (uso pessoal - estudo)"
@@ -55,7 +61,8 @@ def limpar_html(texto):
 def buscar_fontes(conn, feed_id=None, so_sem_artigos=False):
     """Os feeds que alguém segue; ou só um (--fonte); ou só os que ainda
     não têm nenhum artigo (--sem-artigos), pra acabou-de-ser-seguido.
-    Feed que ninguém segue mais não é coletado."""
+    Feed que ninguém segue mais não é coletado, e o que bloqueia o GitHub
+    fica com o hub (coletar_pelo_hub)."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
@@ -63,6 +70,7 @@ def buscar_fontes(conn, feed_id=None, so_sem_artigos=False):
                    exists (select 1 from articles a where a.feed_id = f.id) as tem_artigos
             from feeds f
             where exists (select 1 from sources s where s.feed_id = f.id)
+              and not f.coletar_pelo_hub
               and (%(feed)s::uuid is null or f.id = %(feed)s::uuid)
               and (not %(sem_artigos)s or not exists (select 1 from articles a where a.feed_id = f.id))
             """,
@@ -115,6 +123,14 @@ def baixar_feed(url):
     return feedparser.parse(resposta.content)
 
 
+def bloqueou(erro):
+    """O site barrou a máquina do GitHub (e não está simplesmente fora do ar)."""
+    if isinstance(erro, requests.ConnectionError):
+        return True
+    resposta = getattr(erro, "response", None)
+    return resposta is not None and resposta.status_code in (401, 403, 429)
+
+
 def coletar_rss(source):
     google_news = eh_google_news(source["url"])
     try:
@@ -123,6 +139,7 @@ def coletar_rss(source):
         if google_news:
             raise
         print(f"  RSS falhou ({erro})")
+        source["bloqueado"] = bloqueou(erro)
         entradas = []
     if not entradas and not google_news:
         # Plano B: o endereço não é um feed (ex.: salvaram a página do
@@ -270,12 +287,49 @@ def so_recentes(artigos):
     return com_data[:PRIMEIRA_COLETA_RESERVA]
 
 
+def recentes_do_feed(conn, tabela, coluna, feed_id):
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"select id, url, title from {tabela} where {coluna} = %s "
+            f"and collected_at > now() - make_interval(days => {DIAS_PRA_COMPARAR})",
+            (feed_id,),
+        )
+        return cur.fetchall()
+
+
+def promover(conn, tabela, coluna, feed_id, promovidas):
+    """A notícia que tinha vindo pelo Google ganha o link direto, o texto e
+    a foto (sql/040: e volta pra fila do enriquecimento e da IA)."""
+    feitas = 0
+    with conn.cursor() as cur:
+        for id_existente, n in promovidas:
+            reabrir_ia = ", category = null, ai_summary = null" if tabela == "articles" else ", ai_summary = null"
+            cur.execute(
+                f"""
+                update {tabela}
+                set url = %(url)s, title = %(title)s,
+                    content = coalesce(%(content)s, content),
+                    image_url = coalesce(%(image_url)s, image_url),
+                    author = coalesce(%(author)s, author),
+                    published_at = coalesce(%(published_at)s, published_at),
+                    enriquecido_em = null {reabrir_ia}
+                where id = %(id)s
+                  and not exists (select 1 from {tabela} where {coluna} = %(feed)s and url = %(url)s)
+                """,
+                {**n, "author": n.get("author"), "image_url": n.get("image_url"), "id": id_existente, "feed": feed_id},
+            )
+            feitas += cur.rowcount
+    return feitas
+
+
 def salvar_artigos(conn, feed_id, artigos):
+    """Grava as novas sem repetir a mesma notícia que já veio pelo outro
+    caminho (link direto x Google Notícias, ver manchetes.py)."""
+    artigos = [a for a in artigos if a.get("url")]
+    inserir, promovidas = separar_repetidas(recentes_do_feed(conn, "articles", "feed_id", feed_id), artigos)
     novos = 0
     with conn.cursor() as cur:
-        for artigo in artigos:
-            if not artigo.get("url"):
-                continue
+        for artigo in inserir:
             cur.execute(
                 """
                 insert into articles (feed_id, title, url, content, published_at, author, image_url)
@@ -295,8 +349,17 @@ def salvar_artigos(conn, feed_id, artigos):
             )
             if cur.fetchone():
                 novos += 1
+    novos += promover(conn, "articles", "feed_id", feed_id, promovidas)
     conn.commit()
     return novos
+
+
+def marcar_pelo_hub(conn, feed_id, url):
+    """sql/040: o feed (e a mesma fonte no catálogo) passa a ser coletado pelo hub."""
+    with conn.cursor() as cur:
+        cur.execute("update feeds set coletar_pelo_hub = true where id = %s", (feed_id,))
+        cur.execute("update feed_catalog set coletar_pelo_hub = true where url = %s", (url,))
+    conn.commit()
 
 
 def main():
@@ -323,6 +386,10 @@ def main():
             except Exception as erro:
                 print(f"  erro ao coletar {source['url']}: {erro}")
                 continue
+
+            if source.get("bloqueado"):
+                marcar_pelo_hub(conn, source["id"], source["url"])
+                print("  o site barrou o GitHub: daqui pra frente quem coleta é o hub (Vercel)")
 
             if not source["tem_artigos"]:
                 total = len(artigos)

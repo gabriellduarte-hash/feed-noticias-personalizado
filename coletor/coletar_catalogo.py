@@ -31,9 +31,10 @@ from alternativas import (
     limpar_titulo_google_news,
     url_google_news,
 )
-from coletar import USER_AGENT, extrair_imagem_rss, limpar_html
+from coletar import USER_AGENT, extrair_imagem_rss, limpar_html, promover, recentes_do_feed
 from texto import texto_do_rss
 from db import get_connection
+from manchetes import separar_repetidas
 
 PAUSA_ENTRE_FONTES_SEGUNDOS = 1.0
 MAX_POR_FONTE = 20          # as mais recentes de cada feed, por rodada
@@ -44,7 +45,8 @@ def buscar_catalogo(conn):
     """Só as fontes da vitrine (sql/031). O resto do catálogo é mapa: só é
     coletado quando alguém segue (aí vira fonte normal, no coletar.py)."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("select id, name, url, kind from feed_catalog where vitrine order by name")
+        # as que bloqueiam o GitHub são coletadas pelo hub (sql/040)
+        cur.execute("select id, name, url, kind from feed_catalog where vitrine and not coletar_pelo_hub order by name")
         return cur.fetchall()
 
 
@@ -76,6 +78,10 @@ def coletar_fonte(fonte):
         motivo = None if noticias else "RSS veio vazio"
     except Exception as erro:
         noticias, motivo = [], str(erro)
+        resposta = getattr(erro, "response", None)
+        fonte["bloqueado"] = isinstance(erro, requests.ConnectionError) or (
+            resposta is not None and resposta.status_code in (401, 403, 429)
+        )
     if noticias or google_news:
         return noticias, motivo
     print(f"  RSS falhou ({motivo}); tentando pelo Google Notícias")
@@ -124,6 +130,12 @@ def extrair_noticias(entradas, google_news=False):
 
 
 def salvar(conn, catalog_id, noticias):
+    """Sem repetir a mesma notícia que já veio pelo outro caminho (link
+    direto x Google Notícias, ver manchetes.py)."""
+    noticias = [n for n in noticias if n.get("url")]
+    noticias, promovidas = separar_repetidas(
+        recentes_do_feed(conn, "catalog_articles", "catalog_id", catalog_id), noticias
+    )
     novos = 0
     with conn.cursor() as cur:
         for n in noticias:
@@ -139,6 +151,7 @@ def salvar(conn, catalog_id, noticias):
             )
             if cur.fetchone():
                 novos += 1
+    novos += promover(conn, "catalog_articles", "catalog_id", catalog_id, promovidas)
     conn.commit()
     return novos
 
@@ -179,6 +192,12 @@ def main():
                 com_imagem = sum(1 for n in noticias if n["image_url"])
                 print(f"  {len(noticias)} notícia(s), {com_imagem} com imagem")
             else:
+                if fonte.get("bloqueado"):
+                    with conn.cursor() as cur:
+                        cur.execute("update feed_catalog set coletar_pelo_hub = true where id = %s", (fonte["id"],))
+                        cur.execute("update feeds set coletar_pelo_hub = true where url = %s", (fonte["url"],))
+                    conn.commit()
+                    print("  o site barrou o GitHub: daqui pra frente quem coleta é o hub (Vercel)")
                 novos = salvar(conn, fonte["id"], noticias)
                 total_novos += novos
                 print(f"  {len(noticias)} notícia(s) encontradas, {novos} nova(s)")

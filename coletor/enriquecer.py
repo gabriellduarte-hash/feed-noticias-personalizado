@@ -45,6 +45,13 @@ PAUSA_SEGUNDOS = 0.5
 TABELAS = {"articles": "fontes dos usuários", "catalog_articles": "catálogo"}
 
 
+# Sites que barram o GitHub: quem abre as páginas é o hub, na Vercel (sql/040)
+FORA_DO_HUB = {
+    "articles": "not exists (select 1 from feeds f where f.id = feed_id and f.coletar_pelo_hub)",
+    "catalog_articles": "not exists (select 1 from feed_catalog f where f.id = catalog_id and f.coletar_pelo_hub)",
+}
+
+
 def pendentes(conn, tabela, fonte_id=None, limite=POR_RODADA):
     filtro_fonte = "and feed_id = %(fonte)s" if fonte_id and tabela == "articles" else ""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -55,6 +62,7 @@ def pendentes(conn, tabela, fonte_id=None, limite=POR_RODADA):
             where enriquecido_em is null
               and url not like 'https://news.google.com/%%'
               and (content is null or length(content) < %(curto)s or image_url is null)
+              and {FORA_DO_HUB[tabela]}
               {filtro_fonte}
             order by collected_at desc
             limit %(limite)s

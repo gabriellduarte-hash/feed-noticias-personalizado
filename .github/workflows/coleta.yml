@@ -22,6 +22,9 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # Senha da rota de coleta do hub (o mesmo valor na Vercel). Sem ela,
+      # o passo "Sites que barram o GitHub" é pulado.
+      COLETA_SECRET: ${{ secrets.COLETA_SECRET }}
     steps:
       - uses: actions/checkout@v7
 
@@ -43,6 +46,18 @@ jobs:
         working-directory: coletor
         run: python coletar_catalogo.py
         timeout-minutes: 10
+        continue-on-error: true
+
+      # Sites abertos que barram as máquinas do GitHub (sql/040): quem lê o
+      # feed e abre as páginas deles é o hub, na Vercel. Antes do resumo,
+      # pra IA já ler o texto que o hub trouxer.
+      - name: Sites que barram o GitHub (coleta pelo hub)
+        if: env.COLETA_SECRET != ''
+        run: |
+          curl -sS --fail-with-body --max-time 90 -X POST \
+            -H "Authorization: Bearer $COLETA_SECRET" \
+            https://dailypaper.news/api/coletar-bloqueados
+        timeout-minutes: 3
         continue-on-error: true
 
       # Abre a página das notícias novas pra pegar texto completo e imagem

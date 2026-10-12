@@ -5,8 +5,7 @@ sql/024). Roda de hora em hora (workflow "Resumo diário").
 
 Pra cada usuário com o resumo ligado e cujo horário já chegou hoje
 (horário de Brasília), e que ainda não recebeu o de hoje:
-  1. pega as notícias que chegaram desde o último resumo (ou, se não
-     houve um ontem, desde ontem no horário escolhido), só das coleções
+  1. pega as notícias que chegaram nas últimas 12 horas, só das coleções
      escolhidas (ou de todas), das mais recentes pras mais antigas;
   2. separa as 10 mais recentes com resumo da IA (notícias completas), 5
      manchetes do resto (só título e link) e conta o que sobrou (vira um
@@ -63,6 +62,7 @@ MAX_MANCHETES_POR_FONTE = 2
 # AdoroCinema manda páginas de celebridade: "Milo Quifes"). Manchete sem
 # resumo precisa de pelo menos isso de palavras pra entrar no e-mail.
 MIN_PALAVRAS_MANCHETE = 4
+JANELA_HORAS = 12
 
 
 def usuarios_no_horario(conn, agora, forcar=False, usuario=None):
@@ -89,20 +89,11 @@ def usuarios_no_horario(conn, agora, forcar=False, usuario=None):
         return cur.fetchall()
 
 
-def inicio_do_periodo(conn, usuario, agora):
-    """Desde quando entram notícias: o último resumo enviado ou, se não
-    houve um desde ontem, ontem no horário escolhido (envio às 7h ->
-    notícias que chegaram desde as 7h de ontem)."""
-    ontem_no_horario = (agora - timedelta(days=1)).replace(
-        hour=usuario["hora_envio"], minute=0, second=0, microsecond=0
-    )
-    with conn.cursor() as cur:
-        cur.execute(
-            "select max(sent_at) from digests where user_id = %s and sent_at is not null",
-            (usuario["id"],),
-        )
-        ultimo = cur.fetchone()[0]
-    return max(ultimo, ontem_no_horario) if ultimo else ontem_no_horario
+def inicio_do_periodo(agora):
+    """O resumo traz as notícias das últimas JANELA_HORAS horas (envio às
+    7h -> o que chegou desde as 19h de ontem): o e-mail fica com o que é
+    recente de verdade, e o número do e-mail conta só isso."""
+    return agora - timedelta(hours=JANELA_HORAS)
 
 
 def noticias_do_periodo(conn, user_id, topic_ids, desde):
@@ -115,7 +106,7 @@ def noticias_do_periodo(conn, user_id, topic_ids, desde):
                    coalesce(s.name, '') as fonte, s.url as fonte_url,
                    a.ai_summary as resumo, a.category as categoria
             from articles a
-            join sources s on s.id = a.source_id
+            join sources s on s.feed_id = a.feed_id
             join topics t on t.id = s.topic_id
             where t.user_id = %(user_id)s
               and a.collected_at >= %(desde)s
@@ -223,7 +214,7 @@ def main():
         print(f"{agora:%d/%m %H:%M} (Brasília): {len(usuarios)} usuário(s) com resumo pra enviar.")
 
         for usuario in usuarios:
-            desde = inicio_do_periodo(conn, usuario, agora)
+            desde = inicio_do_periodo(agora)
             noticias = noticias_do_periodo(conn, usuario["id"], usuario["topic_ids"], desde)
             completas, manchetes, restantes = separar(noticias)
             print(

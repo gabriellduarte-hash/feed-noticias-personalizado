@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       fonte_id:
-        description: "id da fonte (sources.id). Vazio = todas as fontes que ainda não têm artigos"
+        description: "id do feed (feeds.id) ou da fonte (sources.id). Vazio = todos os feeds que ainda não têm artigos"
         required: false
         default: ""
 

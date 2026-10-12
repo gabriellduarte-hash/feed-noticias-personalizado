@@ -55,7 +55,8 @@ MAX_DIAS_SEM_PUBLICAR = 45
 # notícia continua vindo da IA. Mesma lista em hub/src/lib/feed.ts.
 CATEGORIAS = [
     "Notícias", "Política", "Finanças", "Tecnologia", "Ciência", "Meio ambiente",
-    "Saúde", "Esportes", "Entretenimento", "Automóveis", "Mundo", "Humor", "Outros",
+    "Saúde", "Esportes", "Entretenimento", "Cinema", "Games", "Automóveis", "Mundo", "Humor",
+    "Outros",
 ]
 IDIOMAS = ("pt", "en")
 

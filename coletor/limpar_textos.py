@@ -28,11 +28,11 @@ from collections import defaultdict
 
 from psycopg2.extras import RealDictCursor, execute_values
 
-from db import get_connection
+from db import get_connection, resolver_feed
 from texto import eh_repetido, limpar_texto
 
-# tabela -> coluna que diz de qual fonte é a notícia
-TABELAS = {"articles": "source_id", "catalog_articles": "catalog_id"}
+# tabela -> coluna do feed (os trechos repetidos são aprendidos por feed)
+TABELAS = {"articles": "feed_id", "catalog_articles": "catalog_id"}
 JANELA_REPETICAO = "7 days"   # onde as repetições são contadas
 DIAS_PRA_ESQUECER = 30
 
@@ -136,12 +136,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--horas", type=int, default=3, help="limpa as notícias coletadas nessas últimas horas")
     parser.add_argument("--dias", type=int, help="limpa as notícias desses últimos dias (faxina geral)")
-    parser.add_argument("--fonte", help="só as notícias desta fonte (sources.id)")
+    parser.add_argument("--fonte", help="só as notícias deste feed (feeds.id ou sources.id)")
     parser.add_argument("--simular", action="store_true", help="mostra o que sairia, sem gravar")
     args = parser.parse_args()
 
     conn = get_connection()
     try:
+        args.fonte = resolver_feed(conn, args.fonte)
         conhecidos = trechos_conhecidos(conn)
         tabelas = {"articles": TABELAS["articles"]} if args.fonte else TABELAS
         for tabela, coluna in tabelas.items():

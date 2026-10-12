@@ -1,9 +1,9 @@
 """
-Lê as fontes cadastradas em `sources`, busca conteúdo novo (RSS, sitemap
-de notícias ou scraping bruto) e insere em `articles`. A deduplicação é feita pelo
-próprio banco, via `on conflict (source_id, url) do nothing` (unique por
-fonte desde o sql/023: duas fontes com o mesmo feed têm cada uma a sua
-cópia dos artigos).
+Lê os feeds que alguém segue (`feeds`, sql/038), busca conteúdo novo (RSS,
+sitemap de notícias ou scraping bruto) e insere em `articles`. Cada feed é
+coletado uma vez só, não importa quantas pessoas o sigam: quem segue vê
+as notícias dele. A deduplicação é feita pelo próprio banco, via
+`on conflict (feed_id, url) do nothing`.
 
 Fonte que acabou de ser seguida (ainda sem nenhum artigo): a primeira
 coleta traz só as notícias das últimas 24 horas. Se não houver nenhuma
@@ -31,7 +31,7 @@ from alternativas import (
     limpar_titulo_google_news,
     url_google_news,
 )
-from db import get_connection
+from db import get_connection, resolver_feed
 from texto import consertar_acentos, texto_da_pagina, texto_do_rss
 
 USER_AGENT = "DailyPaperBot/0.1 (uso pessoal - estudo)"
@@ -52,19 +52,21 @@ def limpar_html(texto):
     return " ".join(texto_limpo.split())
 
 
-def buscar_fontes(conn, fonte_id=None, so_sem_artigos=False):
-    """Todas as fontes; ou só uma (--fonte); ou só as que ainda não têm
-    nenhum artigo (--sem-artigos), pra acabou-de-ser-adicionada."""
+def buscar_fontes(conn, feed_id=None, so_sem_artigos=False):
+    """Os feeds que alguém segue; ou só um (--fonte); ou só os que ainda
+    não têm nenhum artigo (--sem-artigos), pra acabou-de-ser-seguido.
+    Feed que ninguém segue mais não é coletado."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
-            select s.id, s.topic_id, s.url, s.type,
-                   exists (select 1 from articles a where a.source_id = s.id) as tem_artigos
-            from sources s
-            where (%(fonte)s::uuid is null or s.id = %(fonte)s::uuid)
-              and (not %(sem_artigos)s or not exists (select 1 from articles a where a.source_id = s.id))
+            select f.id, f.url, f.type,
+                   exists (select 1 from articles a where a.feed_id = f.id) as tem_artigos
+            from feeds f
+            where exists (select 1 from sources s where s.feed_id = f.id)
+              and (%(feed)s::uuid is null or f.id = %(feed)s::uuid)
+              and (not %(sem_artigos)s or not exists (select 1 from articles a where a.feed_id = f.id))
             """,
-            {"fonte": fonte_id, "sem_artigos": so_sem_artigos},
+            {"feed": feed_id, "sem_artigos": so_sem_artigos},
         )
         return cur.fetchall()
 
@@ -211,7 +213,7 @@ def coletar_sitemap(source, conn):
     itens = ler_sitemap(source["url"], USER_AGENT, limite=MAX_MATERIAS_SITEMAP)
     with conn.cursor() as cur:
         cur.execute(
-            "select url from articles where source_id = %s and url = any(%s)",
+            "select url from articles where feed_id = %s and url = any(%s)",
             (source["id"], [i["url"] for i in itens]),
         )
         ja_salvas = {linha[0] for linha in cur.fetchall()}
@@ -268,7 +270,7 @@ def so_recentes(artigos):
     return com_data[:PRIMEIRA_COLETA_RESERVA]
 
 
-def salvar_artigos(conn, source_id, artigos):
+def salvar_artigos(conn, feed_id, artigos):
     novos = 0
     with conn.cursor() as cur:
         for artigo in artigos:
@@ -276,13 +278,13 @@ def salvar_artigos(conn, source_id, artigos):
                 continue
             cur.execute(
                 """
-                insert into articles (source_id, title, url, content, published_at, author, image_url)
+                insert into articles (feed_id, title, url, content, published_at, author, image_url)
                 values (%s, %s, %s, %s, %s, %s, %s)
-                on conflict (source_id, url) do nothing
+                on conflict (feed_id, url) do nothing
                 returning id
                 """,
                 (
-                    source_id,
+                    feed_id,
                     artigo["title"],
                     artigo["url"],
                     artigo["content"],
@@ -299,15 +301,15 @@ def salvar_artigos(conn, source_id, artigos):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fonte", help="coleta só esta fonte (uuid)")
+    parser.add_argument("--fonte", help="coleta só este feed (feeds.id ou sources.id)")
     parser.add_argument("--sem-artigos", action="store_true", help="só fontes que ainda não têm nenhum artigo")
     args = parser.parse_args()
 
     conn = get_connection()
     try:
-        fontes = buscar_fontes(conn, args.fonte or None, args.sem_artigos)
+        fontes = buscar_fontes(conn, resolver_feed(conn, args.fonte), args.sem_artigos)
         conn.commit()  # fecha a transação da leitura antes de sair baixando feeds
-        print(f"{len(fontes)} fonte(s) cadastrada(s).")
+        print(f"{len(fontes)} feed(s) seguido(s).")
 
         for source in fontes:
             print(f"Coletando: {source['url']} ({source['type']})")

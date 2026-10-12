@@ -1,6 +1,8 @@
 """
-Gera um resumo por notícia com a API do Gemini e classifica cada uma numa
-categoria editorial fixa (Tecnologia, Finanças, etc.). Duas fases:
+Gera um resumo por notícia com a API do Gemini, classifica cada uma numa
+categoria editorial fixa (Tecnologia, Finanças, etc.) e guarda de 3 a 5
+palavras-chave (base do Trending e, no futuro, de "notícias por tema").
+Duas fases:
 
   1. artigos das fontes dos usuários (`articles`): categoria sempre, e
      resumo só se tiver texto (TEXTO_MINIMO) — sempre primeiro, é o que
@@ -21,7 +23,9 @@ conteúdo, ex.: "Tecnologia") são coisas diferentes. O tópico decide o
 que é coletado; a categoria decide como o feed e o e-mail se organizam.
 """
 import random
+import re
 import time
+import unicodedata
 from typing import Literal, get_args
 
 from google import genai
@@ -64,7 +68,7 @@ RESERVA_EXPIRA = "30 minutes"     # reserva de um job que caiu volta a valer
 # grupos diferentes por acidente).
 Categoria = Literal[
     "Tecnologia", "Finanças", "Humor", "Política", "Ciência",
-    "Saúde", "Esportes", "Entretenimento", "Mundo", "Outros",
+    "Saúde", "Esportes", "Entretenimento", "Cinema", "Games", "Mundo", "Outros",
 ]
 CATEGORIAS = get_args(Categoria)
 
@@ -83,7 +87,15 @@ SYSTEM_INSTRUCTION = (
     "- Se o artigo tiver pouco texto (só título ou uma ou duas frases), escreva um único "
     "parágrafo curto, sem completar com suposições.\n"
     "Classifique cada artigo em UMA categoria da lista: " + ", ".join(CATEGORIAS) + ". "
-    "Use 'Outros' só se nenhuma outra fizer sentido."
+    "Games: videogames, consoles, jogos de PC e celular, e-sports. "
+    "Cinema: filmes, séries, streaming, bilheteria e premiações de cinema e séries. "
+    "Entretenimento: TV aberta, novelas, reality shows, música, celebridades, livros e cultura. "
+    "Use 'Outros' só se nenhuma outra fizer sentido.\n"
+    "Dê também de 3 a 5 palavras-chave por artigo, em português e em minúsculas: os nomes "
+    "próprios e os assuntos centrais (ex.: 'lula', 'stf', 'inteligência artificial', "
+    "'copa do mundo'), no singular, sem palavras genéricas como 'notícia' ou 'brasil' "
+    "quando não forem o assunto. A mesma história em artigos diferentes deve receber as "
+    "mesmas palavras-chave."
 )
 
 
@@ -91,6 +103,7 @@ class ResumoArtigo(BaseModel):
     indice: int  # 1-based, corresponde ao "Artigo N" do prompt
     resumo: str
     categoria: Categoria
+    palavras_chave: list[str] = []
 
 
 class ResumoTopico(BaseModel):
@@ -107,16 +120,19 @@ FILTRO_PENDENTES = {
     "catalog_articles": f"ai_summary is null and length(content) >= {TEXTO_MINIMO}",
 }
 
-# Detalhes pra montar o pedido à IA. "grupo" é o contexto do lote: o
-# tópico do usuário, ou a categoria da fonte no catálogo.
+# Detalhes pra montar o pedido à IA. "grupo" é o contexto do lote: a
+# categoria da fonte no catálogo (ou o nome da fonte, se ela não estiver
+# no catálogo). Desde o sql/038 a notícia é do feed, que pode ser seguido
+# por várias pessoas, então o tópico de um usuário não serve mais.
 DETALHES = {
     "articles": """
-        select a.id, t.name as grupo, a.title, a.url, a.content, a.author, a.published_at
+        select a.id, coalesce(c.category, f.name, 'Geral') as grupo,
+               a.title, a.url, a.content, a.author, a.published_at
         from articles a
-        join sources s on s.id = a.source_id
-        join topics t on t.id = s.topic_id
+        join feeds f on f.id = a.feed_id
+        left join feed_catalog c on c.url = f.url
         where a.id = any(%s::uuid[])
-        order by t.name, a.collected_at
+        order by grupo, a.collected_at
     """,
     "catalog_articles": """
         select c.id, f.category as grupo, c.title, c.url, c.content, c.author, c.published_at
@@ -185,7 +201,7 @@ def montar_input(grupo, artigos):
     ]
     corpo = "\n\n".join(partes)
     return (
-        f"Tópico: {grupo}\n\n"
+        f"Contexto: {grupo}\n\n"
         f"Resuma e classifique cada um dos {len(artigos)} artigos abaixo, "
         "na mesma ordem (indice 1 = Artigo 1, etc.).\n\n" + corpo
     )
@@ -230,6 +246,21 @@ def resumir_artigos(client, grupo, artigos):
         time.sleep(espera)
 
 
+MAX_PALAVRAS_CHAVE = 5
+
+
+def normalizar_palavras(palavras):
+    """Minúsculas, sem acento e sem repetir: "Inteligência  Artificial" e
+    "inteligencia artificial" viram a mesma (o Trending compara assim)."""
+    vistas = []
+    for palavra in palavras or []:
+        sem_acento = unicodedata.normalize("NFKD", palavra).encode("ascii", "ignore").decode()
+        limpa = re.sub(r"\s+", " ", sem_acento).strip(" .,;:#\"'").lower()[:40]
+        if limpa and limpa not in vistas:
+            vistas.append(limpa)
+    return vistas[:MAX_PALAVRAS_CHAVE]
+
+
 def casar_resumos(artigos, resposta: ResumoTopico):
     """Junta cada resumo (vindo do Gemini) com o id real da notícia. O
     modelo nunca vê nem inventa url/autor/data: isso evita alucinação
@@ -244,22 +275,31 @@ def casar_resumos(artigos, resposta: ResumoTopico):
             continue
         # sem texto suficiente, o que a IA escrever é paráfrase do título: descarta
         resumo = item.resumo.strip() if tem_texto(artigo) else None
-        casados.append({"id": artigo["id"], "resumo": resumo or None, "categoria": item.categoria})
+        casados.append({
+            "id": artigo["id"],
+            "resumo": resumo or None,
+            "categoria": item.categoria,
+            "palavras_chave": normalizar_palavras(item.palavras_chave) or None,
+        })
     return casados
 
 
 def salvar(conn, tabela, casados):
-    """articles: resumo + categoria. catalog_articles: só o resumo (a
-    categoria do catálogo vem da fonte, em feed_catalog)."""
+    """articles: resumo + categoria + palavras-chave. catalog_articles:
+    resumo + palavras-chave (a categoria do catálogo vem da fonte, em
+    feed_catalog)."""
     with conn.cursor() as cur:
         for c in casados:
             if tabela == "articles":
                 cur.execute(
-                    "update articles set category = %s, ai_summary = %s where id = %s",
-                    (c["categoria"], c["resumo"], c["id"]),
+                    "update articles set category = %s, ai_summary = %s, palavras_chave = %s where id = %s",
+                    (c["categoria"], c["resumo"], c["palavras_chave"], c["id"]),
                 )
             else:
-                cur.execute("update catalog_articles set ai_summary = %s where id = %s", (c["resumo"], c["id"]))
+                cur.execute(
+                    "update catalog_articles set ai_summary = %s, palavras_chave = %s where id = %s",
+                    (c["resumo"], c["palavras_chave"], c["id"]),
+                )
     conn.commit()
 
 

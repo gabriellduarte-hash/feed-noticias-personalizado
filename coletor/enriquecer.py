@@ -35,7 +35,7 @@ import trafilatura
 from psycopg2.extras import RealDictCursor
 
 from coletar import USER_AGENT
-from db import get_connection
+from db import get_connection, resolver_feed
 from texto import texto_da_pagina
 
 POR_RODADA = 60          # por tabela; a coleta roda de hora em hora
@@ -46,7 +46,7 @@ TABELAS = {"articles": "fontes dos usuários", "catalog_articles": "catálogo"}
 
 
 def pendentes(conn, tabela, fonte_id=None, limite=POR_RODADA):
-    filtro_fonte = "and source_id = %(fonte)s" if fonte_id and tabela == "articles" else ""
+    filtro_fonte = "and feed_id = %(fonte)s" if fonte_id and tabela == "articles" else ""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""
@@ -141,7 +141,7 @@ def marcar_tentada(conn, tabela, noticia_id):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fonte", help="só as notícias desta fonte (sources.id)")
+    parser.add_argument("--fonte", help="só as notícias deste feed (feeds.id ou sources.id)")
     parser.add_argument("--simular", action="store_true", help="baixa e mostra, sem gravar")
     args = parser.parse_args()
 
@@ -149,9 +149,10 @@ def main():
     bloqueados = set()
     conn = get_connection()
     try:
-        tabelas = ["articles"] if args.fonte else list(TABELAS)
+        feed = resolver_feed(conn, args.fonte)
+        tabelas = ["articles"] if feed else list(TABELAS)
         for tabela in tabelas:
-            noticias = pendentes(conn, tabela, args.fonte)
+            noticias = pendentes(conn, tabela, feed)
             conn.commit()  # fecha a leitura antes de abrir as páginas
             print(f"{TABELAS[tabela]}: {len(noticias)} notícia(s) pra enriquecer")
             com_texto = com_imagem = 0

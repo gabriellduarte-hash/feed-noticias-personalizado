@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 FUSO_BR = ZoneInfo("America/Sao_Paulo")
 
-HUB_URL = "https://feed-hub-leitura.vercel.app"
+HUB_URL = "https://dailypaper.news"
 
 FONTE = "'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace"
 PRETO = "#121212"

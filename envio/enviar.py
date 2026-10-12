@@ -13,23 +13,13 @@ Pra cada usuário com o resumo ligado e cujo horário já chegou hoje
      link pro hub). Assim o e-mail tem sempre o mesmo tamanho, siga a
      pessoa 5 ou 50 fontes;
   3. monta o HTML (resumo/template.py) e salva em `digests`;
-  4. envia via Resend pro e-mail do usuário + a lista de digest_recipients;
+  4. envia pelo Resend, do domínio do projeto (resumo@dailypaper.news),
+     pro e-mail do usuário + a lista de digest_recipients: um e-mail por
+     destinatário, pra ninguém ver o endereço dos outros;
   5. marca `digests.sent_at`.
 
 "Já chegou" em vez de "é exatamente a hora": o agendamento do GitHub às
 vezes atrasa, e um atraso não pode fazer alguém perder o resumo do dia.
-
-Como envia (um e-mail por destinatário, pra ninguém ver o endereço dos
-outros):
-  - SMTP, se SMTP_USER e SMTP_PASSWORD estiverem definidos: no período de
-    testes, o Gmail do projeto com uma senha de app. Envia como esse
-    Gmail, pra qualquer pessoa. Tenta a porta 465 e, se ela falhar, a 587.
-    Se o SMTP não abrir de jeito nenhum, a rodada envia pelo Resend (com
-    um aviso no log do GitHub), pra o resumo não se perder.
-  - senão, Resend. Enquanto o remetente for `onboarding@resend.dev` (sem
-    domínio verificado), o Resend só entrega pro e-mail da PRÓPRIA conta
-    Resend. Por isso FEED_TO_EMAIL continua valendo como destinatário
-    principal do FEED_USER_ID (se estiver definido).
 
 Uso (de dentro de envio/):
     python enviar.py                       # envia pra quem está no horário
@@ -38,10 +28,8 @@ Uso (de dentro de envio/):
 """
 import argparse
 import os
-import smtplib
 import sys
-from email.message import EmailMessage
-from email.utils import formataddr
+import time
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -57,7 +45,12 @@ from foto_do_dia import foto_do_dia
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "resumo"))
 from template import data_extenso, montar_email_html  # noqa: E402
 
-FROM_ADDRESS = "Daily Paper <onboarding@resend.dev>"
+FROM_ADDRESS = "Daily Paper <resumo@dailypaper.news>"
+# Respostas ao resumo vão pro Gmail do projeto (o domínio ainda não recebe
+# e-mail; quando receber, vira contato@dailypaper.news)
+RESPONDER_PARA = "feeddailypaper@gmail.com"
+# O Resend aceita poucas requisições por segundo: uma pausa entre envios
+PAUSA_ENTRE_ENVIOS = 0.6
 FUSO = ZoneInfo("America/Sao_Paulo")
 MAX_COMPLETAS = 10        # notícias com resumo da IA, as mais recentes
 MAX_MANCHETES = 5         # do resto, só título e link
@@ -191,13 +184,10 @@ def salvar_digest(conn, user_id, dia, html):
 
 
 def destinatarios(conn, usuario):
-    principal = usuario["email"]
-    if os.environ.get("FEED_USER_ID") == str(usuario["id"]) and os.environ.get("FEED_TO_EMAIL"):
-        principal = os.environ["FEED_TO_EMAIL"]
     with conn.cursor() as cur:
         cur.execute("select email from digest_recipients where user_id = %s", (usuario["id"],))
         extras = [linha[0] for linha in cur.fetchall()]
-    return list(dict.fromkeys([principal, *extras]))
+    return list(dict.fromkeys([usuario["email"], *extras]))
 
 
 def marcar_como_enviado(conn, digest_id):
@@ -206,78 +196,14 @@ def marcar_como_enviado(conn, digest_id):
     conn.commit()
 
 
-class Remetente:
-    """Abre o SMTP (ou prepara o Resend) uma vez e envia um por um."""
-
-    def __init__(self):
-        self.usuario = os.environ.get("SMTP_USER", "").strip()
-        self.senha = "".join(os.environ.get("SMTP_PASSWORD", "").split())  # a senha de app do Google vem com espaços
-        self.host = os.environ.get("SMTP_HOST", "").strip() or "smtp.gmail.com"
-        self.smtp = None
-        if self.usuario and self.senha:
-            try:
-                self.conectar()
-            except (smtplib.SMTPException, OSError) as erro:
-                # ::warning:: vira um aviso amarelo na página da execução no GitHub
-                print(f"::warning::SMTP indisponível ({type(erro).__name__}: {erro}); esta rodada envia pelo Resend")
-        if not self.smtp:
-            resend.api_key = os.environ["RESEND_API_KEY"]
-
-    def conectar(self):
-        """Porta 465 (SSL) e, se ela falhar, 587 (STARTTLS). O log diz em
-        que passo parou. Senha recusada não tenta a outra porta."""
-        ultimo_erro = None
-        for porta in (465, 587):
-            smtp, passo = None, "conectar"
-            try:
-                if porta == 465:
-                    smtp = smtplib.SMTP_SSL(self.host, porta, timeout=30)
-                else:
-                    smtp = smtplib.SMTP(self.host, porta, timeout=30)
-                    passo = "starttls"
-                    smtp.starttls()
-                passo = "login"
-                # Só AUTH PLAIN: o login() do smtplib, quando a senha é
-                # recusada (535), tenta de novo com AUTH LOGIN, o Gmail
-                # fecha a conexão e o erro vira "Connection unexpectedly
-                # closed", escondendo o motivo real.
-                smtp.ehlo()
-                smtp.auth("PLAIN", lambda desafio=None: f"\0{self.usuario}\0{self.senha}")
-                print(f"SMTP: conectado em {self.host}:{porta} como {self.usuario}")
-                self.smtp = smtp
-                return
-            except (smtplib.SMTPException, OSError) as erro:
-                print(f"SMTP: falhou em {self.host}:{porta}, no passo '{passo}': {type(erro).__name__}: {erro}")
-                if smtp:
-                    smtp.close()
-                if isinstance(erro, smtplib.SMTPAuthenticationError):
-                    raise
-                ultimo_erro = erro
-        raise ultimo_erro
-
-    def enviar(self, para, assunto, html):
-        if not self.smtp:
-            resend.Emails.send({"from": FROM_ADDRESS, "to": [para], "subject": assunto, "html": html})
-            return
-        mensagem = EmailMessage()
-        mensagem["From"] = formataddr(("Daily Paper", self.usuario))
-        mensagem["To"] = para
-        mensagem["Subject"] = assunto
-        mensagem.set_content("Seu resumo do dia está em HTML. Abra este e-mail num app que mostre HTML.")
-        mensagem.add_alternative(html, subtype="html")
-        try:
-            self.smtp.send_message(mensagem)
-        except smtplib.SMTPServerDisconnected:
-            # o Gmail fecha conexão parada: reconecta uma vez e tenta de novo
-            self.conectar()
-            self.smtp.send_message(mensagem)
-
-    def fechar(self):
-        if self.smtp:
-            try:
-                self.smtp.quit()
-            except (smtplib.SMTPException, OSError):
-                pass  # a conexão já tinha caído; o que foi enviado já está no log
+def enviar_email(para, assunto, html):
+    resend.Emails.send({
+        "from": FROM_ADDRESS,
+        "to": [para],
+        "reply_to": RESPONDER_PARA,
+        "subject": assunto,
+        "html": html,
+    })
 
 
 def main():
@@ -288,7 +214,6 @@ def main():
     args = parser.parse_args()
 
     agora = datetime.now(FUSO)
-    remetente = None
 
     conn = get_connection()
     try:
@@ -323,22 +248,21 @@ def main():
                 continue
 
             digest_id = salvar_digest(conn, usuario["id"], agora.date(), html)
-            remetente = remetente or Remetente()
+            resend.api_key = os.environ["RESEND_API_KEY"]
             enviados = 0
             for destino in para:
                 try:
-                    remetente.enviar(destino, f"Seu resumo de {data_extenso(agora.date())}", html)
+                    enviar_email(destino, f"Seu resumo de {data_extenso(agora.date())}", html)
                     enviados += 1
-                except (ResendError, smtplib.SMTPException, OSError) as erro:
+                except (ResendError, OSError) as erro:
                     print(f"  erro ao enviar pra {destino}: {erro}")
+                time.sleep(PAUSA_ENTRE_ENVIOS)
             if not enviados:
                 # não marca como enviado: a próxima rodada (daqui a 1h) tenta de novo
                 continue
             marcar_como_enviado(conn, digest_id)
             print(f"  enviado pra {enviados} de {len(para)} destinatário(s)")
     finally:
-        if remetente:
-            remetente.fechar()
         conn.close()
 
 

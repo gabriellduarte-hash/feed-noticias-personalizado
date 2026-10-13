@@ -163,6 +163,8 @@ def apagar_antigas(conn):
             (DIAS_GUARDADOS,),
         )
         apagadas = cur.rowcount
+        # estatísticas de uso (sql/043) ficam só 90 dias
+        cur.execute("delete from eventos where criado_em < now() - interval '90 days'")
     conn.commit()
     return apagadas
 

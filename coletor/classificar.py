@@ -11,11 +11,15 @@ Como decide a categoria:
   3. fica com a mais pontuada. Sem sinal suficiente: a do site, ou
      "Outros". A confiança (0 a 1) vai junto, pra saber o que revisar.
 Temas: os subassuntos da categoria que apareceram (taxonomia.py).
-Nomes (palavras_chave): pessoas, empresas, lugares e siglas (sinais.py),
-usados pelo agrupamento de histórias (agrupar.py).
+Nomes: pessoas, organizações, lugares e obras, pelo spaCy (entidades.py).
+Vão em dois lugares: `entidades` (como aparecem, com o tipo, pro hub
+mostrar e a pessoa seguir) e `palavras_chave` (só as chaves
+normalizadas, pro agrupamento de histórias e pra achar quem segue).
 
 Roda de hora em hora, depois da limpeza de texto. Só as notícias ainda
-não classificadas (classificado_em nulo).
+não classificadas (classificado_em nulo), ou classificadas antes dos
+nomes pelo spaCy (entidades nulo, sql/045): na primeira rodada depois do
+045, refaz os últimos 3 dias.
 
 Uso (de dentro de coletor/):
     python classificar.py               # as novas
@@ -23,12 +27,15 @@ Uso (de dentro de coletor/):
     python classificar.py --avaliar     # compara com as categorias que a IA dava, sem gravar
 """
 import argparse
+import json
+import time
 from collections import Counter, defaultdict
 
 from psycopg2.extras import RealDictCursor, execute_values
 
 from db import get_connection
-from sinais import nomes, normalizar
+from entidades import extrair
+from sinais import normalizar
 from taxonomia import CATEGORIAS, DA_FONTE, FONTES_ESPECIALIZADAS
 
 PESO_TITULO = 3
@@ -37,7 +44,6 @@ CARACTERES_DO_TEXTO = 600
 BONUS_FONTE_ESPECIALIZADA = 4
 BONUS_FONTE_GERAL = 1.5
 SINAL_MINIMO = 3          # abaixo disso, vale a categoria do site
-MAX_NOMES = 8
 LOTE = 2000
 
 # termo normalizado -> [(categoria, peso)]; n-gramas até 4 palavras
@@ -69,7 +75,7 @@ def categoria_da_fonte(categoria_do_site):
 
 
 def classificar(titulo, texto, categoria_do_site=None):
-    """(categoria, temas, confiança, nomes)."""
+    """(categoria, temas, confiança). Os nomes saem à parte, em lote (entidades.extrair)."""
     pontos = Counter()
     termos_titulo = termos_do_texto(titulo)
     termos_texto = termos_do_texto((texto or "")[:CARACTERES_DO_TEXTO])
@@ -93,15 +99,14 @@ def classificar(titulo, texto, categoria_do_site=None):
 
     presentes = set(termos_titulo) | set(termos_texto)
     temas = [tema for tema, lista in CATEGORIAS.get(categoria, {}).get("temas", {}).items() if presentes & set(lista)]
-    achados = nomes(f"{titulo}. {(texto or '')[:300]}")[:MAX_NOMES]
-    return categoria, temas, confianca, achados
+    return categoria, temas, confianca
 
 
 # ------------------------------------------------------------------ banco
 
 CONSULTAS = {
     "articles": """
-        select a.id, a.title, a.content, a.category as categoria_atual, c.category as categoria_do_site
+        select a.id, a.title, a.content, a.category as categoria_atual, c.category as categoria_do_site, c.idioma
         from articles a
         join feeds f on f.id = a.feed_id
         left join feed_catalog c on c.url = f.url
@@ -110,7 +115,7 @@ CONSULTAS = {
         limit %(lote)s
     """,
     "catalog_articles": """
-        select a.id, a.title, a.content, a.category as categoria_atual, c.category as categoria_do_site
+        select a.id, a.title, a.content, a.category as categoria_atual, c.category as categoria_do_site, c.idioma
         from catalog_articles a
         join feed_catalog c on c.id = a.catalog_id
         where {filtro}
@@ -124,7 +129,7 @@ def pendentes(conn, tabela, dias=None):
     filtro = (
         f"a.collected_at > now() - make_interval(days => {int(dias)})"
         if dias
-        else "a.classificado_em is null and a.collected_at > now() - interval '3 days'"
+        else "(a.classificado_em is null or a.entidades is null) and a.collected_at > now() - interval '3 days'"
     )
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(CONSULTAS[tabela].format(filtro=filtro), {"lote": LOTE})
@@ -139,14 +144,53 @@ def gravar(conn, tabela, resultados):
             cur,
             f"""
             update {tabela} as t
-            set category = v.categoria, temas = v.temas::text[], palavras_chave = v.nomes::text[],
-                categoria_confianca = v.confianca, classificado_em = now()
-            from (values %s) as v(id, categoria, temas, confianca, nomes)
+            set category = v.categoria, temas = v.temas::text[], palavras_chave = v.chaves::text[],
+                entidades = v.entidades::jsonb, categoria_confianca = v.confianca, classificado_em = now()
+            from (values %s) as v(id, categoria, temas, confianca, chaves, entidades)
             where t.id = v.id::uuid
             """,
             resultados,
-            template="(%s, %s, %s, %s, %s)",
+            template="(%s, %s, %s, %s, %s, %s)",
             page_size=500,
+        )
+    conn.commit()
+
+
+def atualizar_sugestoes(conn):
+    """Os temas e nomes mais citados nos últimos 3 dias (tabela
+    sugestoes_seguir, sql/045): o que o hub sugere pra seguir. Nome citado
+    por menos de 3 notícias fica de fora (erro de leitura, nome de passagem)."""
+    with conn.cursor() as cur:
+        cur.execute("delete from sugestoes_seguir")
+        cur.execute(
+            """
+            insert into sugestoes_seguir (tipo, chave, rotulo, detalhe, noticias)
+            select 'nome', e->>'chave', mode() within group (order by e->>'nome'),
+                   mode() within group (order by e->>'tipo'), count(distinct n.url)
+            from (
+              select url, entidades from articles
+              where collected_at > now() - interval '3 days' and entidades is not null
+              union all
+              select url, entidades from catalog_articles
+              where collected_at > now() - interval '3 days' and entidades is not null
+            ) n, jsonb_array_elements(n.entidades) e
+            group by e->>'chave'
+            having count(distinct n.url) >= 3
+            order by count(distinct n.url) desc
+            limit 3000
+            """
+        )
+        cur.execute(
+            """
+            insert into sugestoes_seguir (tipo, chave, rotulo, detalhe, noticias)
+            select 'tema', t, t, mode() within group (order by n.category), count(distinct n.url)
+            from (
+              select url, temas, category from articles where collected_at > now() - interval '3 days'
+              union all
+              select url, temas, category from catalog_articles where collected_at > now() - interval '3 days'
+            ) n, unnest(n.temas) t
+            group by t
+            """
         )
     conn.commit()
 
@@ -166,7 +210,7 @@ def avaliar(conn):
         linhas = cur.fetchall()
     acertos, confusao = 0, Counter()
     for linha in linhas:
-        categoria, *_ = classificar(linha["title"], linha["content"], linha["site"])
+        categoria, _, _ = classificar(linha["title"], linha["content"], linha["site"])
         if categoria == linha["ia"]:
             acertos += 1
         else:
@@ -190,20 +234,23 @@ def main():
             avaliar(conn)
             return
         for tabela in ("articles", "catalog_articles"):
-            total = 0
+            total, inicio = 0, time.time()
             while True:
                 linhas = pendentes(conn, tabela, args.dias)
                 if not linhas:
                     break
+                nomes = extrair([(linha["title"], linha["content"], linha["idioma"]) for linha in linhas])
                 resultados = []
-                for linha in linhas:
-                    categoria, temas, confianca, achados = classificar(linha["title"], linha["content"], linha["categoria_do_site"])
-                    resultados.append((str(linha["id"]), categoria, temas, confianca, achados))
+                for linha, achados in zip(linhas, nomes):
+                    categoria, temas, confianca = classificar(linha["title"], linha["content"], linha["categoria_do_site"])
+                    chaves = list(dict.fromkeys(n["chave"] for n in achados))
+                    resultados.append((str(linha["id"]), categoria, temas, confianca, chaves, json.dumps(achados, ensure_ascii=False)))
                 gravar(conn, tabela, resultados)
                 total += len(resultados)
                 if args.dias or len(linhas) < LOTE:
                     break
-            print(f"{tabela}: {total} notícia(s) classificada(s)")
+            print(f"{tabela}: {total} notícia(s) classificada(s) ({time.time() - inicio:.1f}s)")
+        atualizar_sugestoes(conn)
     finally:
         conn.close()
 

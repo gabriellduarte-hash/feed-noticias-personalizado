@@ -9,7 +9,9 @@ Pra cada usuário com o resumo ligado e cujo horário já chegou hoje
      escolhidas (ou de todas), das mais recentes pras mais antigas;
   2. ordena por relevância, sem IA (sql/044): primeiro as histórias que
      mais sites estão cobrindo (agrupar.py), depois as mais recentes, uma
-     notícia por história. Separa as 10 primeiras com texto (notícias
+     notícia por história. O que tem um tema ou nome que a pessoa segue
+     (aba Seguindo, sql/045) sobe como se mais BONUS_SEGUIDO sites
+     cobrissem. Separa as 10 primeiras com texto (notícias
      completas), 5 manchetes do resto (só título e link) e conta o que
      sobrou (vira um link pro hub). Assim o e-mail tem sempre o mesmo
      tamanho, siga a pessoa 5 ou 50 fontes;
@@ -74,6 +76,9 @@ MAX_COMPLETAS_POR_CATEGORIA = 3
 # resumo precisa de pelo menos isso de palavras pra entrar no e-mail.
 MIN_PALAVRAS_MANCHETE = 4
 JANELA_HORAS = 12
+# Quem segue "Lula" vê as notícias dele antes, mas sem tomar o e-mail
+# todo: vale como 3 sites a mais cobrindo (e o limite por categoria segue)
+BONUS_SEGUIDO = 3
 
 
 def usuarios_no_horario(conn, agora, forcar=False, usuario=None):
@@ -117,11 +122,14 @@ def noticias_do_periodo(conn, user_id, topic_ids, desde):
                    coalesce(a.published_at, a.collected_at) as quando,
                    coalesce(s.name, '') as fonte, s.url as fonte_url,
                    a.ai_summary as resumo, a.category as categoria,
-                   a.historia_id, coalesce(h.fontes, 1) as cobertura
+                   a.historia_id, coalesce(h.fontes, 1) as cobertura,
+                   coalesce(a.temas, '{}') as temas, coalesce(a.palavras_chave, '{}') as nomes,
+                   fc.idioma
             from articles a
             join sources s on s.feed_id = a.feed_id
             join topics t on t.id = s.topic_id
             left join historias h on h.id = a.historia_id
+            left join feed_catalog fc on fc.url = s.url
             where t.user_id = %(user_id)s
               and a.collected_at >= %(desde)s
               and (%(topic_ids)s::uuid[] is null or t.id = any(%(topic_ids)s::uuid[]))
@@ -130,6 +138,14 @@ def noticias_do_periodo(conn, user_id, topic_ids, desde):
             {"user_id": user_id, "topic_ids": topic_ids, "desde": desde},
         )
         return cur.fetchall()
+
+
+def seguidos(conn, user_id):
+    """(temas, nomes) que a pessoa segue."""
+    with conn.cursor() as cur:
+        cur.execute("select tipo, chave from seguindo where user_id = %s", (user_id,))
+        linhas = cur.fetchall()
+    return {c for t, c in linhas if t == "tema"}, {c for t, c in linhas if t == "nome"}
 
 
 def _primeiras(lista, limite, por_fonte, por_categoria=None):
@@ -154,10 +170,16 @@ def _primeiras(lista, limite, por_fonte, por_categoria=None):
     return [lista[i] for i in sorted(indices)]
 
 
-def por_relevancia(noticias):
-    """Sem IA: as histórias que mais sites estão cobrindo primeiro; na
-    mesma cobertura, as mais recentes. Uma notícia por história."""
-    ordenadas = sorted(noticias, key=lambda n: (-n["cobertura"], -n["quando"].timestamp()))
+def por_relevancia(noticias, temas_seguidos=(), nomes_seguidos=()):
+    """Sem IA: as histórias que mais sites estão cobrindo primeiro (o que a
+    pessoa segue ganha BONUS_SEGUIDO); na mesma cobertura, as em português
+    antes (a história que junta português e inglês aparece pela notícia em
+    português) e depois as mais recentes. Uma notícia por história."""
+    def peso(n):
+        segue = bool(set(n.get("temas") or ()) & set(temas_seguidos) or set(n.get("nomes") or ()) & set(nomes_seguidos))
+        return n["cobertura"] + (BONUS_SEGUIDO if segue else 0)
+
+    ordenadas = sorted(noticias, key=lambda n: (-peso(n), n.get("idioma") == "en", -n["quando"].timestamp()))
     vistas, saida = set(), []
     for n in ordenadas:
         if n["historia_id"]:
@@ -168,9 +190,9 @@ def por_relevancia(noticias):
     return saida
 
 
-def separar(noticias):
+def separar(noticias, temas_seguidos=(), nomes_seguidos=()):
     """(completas, manchetes, quantas sobraram)."""
-    ordenadas = por_relevancia(noticias)
+    ordenadas = por_relevancia(noticias, temas_seguidos, nomes_seguidos)
     com_texto = [n for n in ordenadas if n["resumo"] or len(n["content"] or "") >= TEXTO_PRA_RESUMIR]
     completas = _primeiras(com_texto, MAX_COMPLETAS, MAX_COMPLETAS_POR_FONTE, MAX_COMPLETAS_POR_CATEGORIA)
     escolhidas = {id(n) for n in completas}
@@ -294,7 +316,7 @@ def main():
         for usuario in usuarios:
             desde = inicio_do_periodo(agora)
             noticias = noticias_do_periodo(conn, usuario["id"], usuario["topic_ids"], desde)
-            completas, manchetes, restantes = separar(noticias)
+            completas, manchetes, restantes = separar(noticias, *seguidos(conn, usuario["id"]))
             print(
                 f"- {usuario['email']} ({usuario['hora_envio']}h): {len(noticias)} notícia(s) desde "
                 f"{desde.astimezone(FUSO):%d/%m %H:%M}; {len(completas)} completa(s), "

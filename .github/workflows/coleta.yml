@@ -1,8 +1,8 @@
 name: Coleta de notícias
 
 # De hora em hora: busca o que há de novo nas fontes dos usuários e nas
-# do catálogo (aba Explorar), e resume/categoriza com a IA só o que é
-# novo. Minuto 20 pra fugir do pico do começo da hora no GitHub.
+# do catálogo (aba Explorar), e classifica e agrupa em histórias, sem IA.
+# Minuto 20 pra fugir do pico do começo da hora no GitHub.
 on:
   schedule:
     - cron: "20 * * * *"
@@ -31,9 +31,17 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip  # reaproveita os pacotes entre as execuções (roda toda hora)
+          cache-dependency-path: requirements*.txt
 
       - name: Instalar dependências
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-nlp.txt
+
+      # O modelo dos vetores (vetores.py, ~220 MB) baixa uma vez e fica
+      # guardado aqui; sem isso, baixaria toda hora
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/daily-paper-modelos
+          key: modelos-paraphrase-multilingual-MiniLM-L12-v2
 
       - name: Coletar fontes dos usuários
         working-directory: coletor
@@ -76,16 +84,19 @@ jobs:
         timeout-minutes: 5
         continue-on-error: true
 
-      # Sem IA (sql/044): categoria, temas e nomes pela taxonomia
-      # (taxonomia.py) e pela categoria do site. A IA agora só resume o que
-      # vai pro e-mail, na hora do envio (workflow "Resumo diário").
+      # Sem IA (sql/044 e 045): categoria e temas pela taxonomia
+      # (taxonomia.py) e pela categoria do site; nomes pelo spaCy
+      # (entidades.py). A IA só resume o que vai pro e-mail, na hora do
+      # envio (workflow "Resumo diário").
       - name: Classificar (sem IA)
         working-directory: coletor
         run: python classificar.py
         timeout-minutes: 5
 
       # Histórias: notícias de sites diferentes sobre o mesmo acontecimento
-      # (nota de semelhança). Define o Trending e a relevância no e-mail.
+      # (nota de semelhança, com vetores que juntam português e inglês).
+      # Define o Trending e a relevância no e-mail. A primeira rodada
+      # depois do 045 calcula os vetores da janela toda (alguns minutos).
       - name: Agrupar histórias (sem IA)
         working-directory: coletor
         run: python agrupar.py

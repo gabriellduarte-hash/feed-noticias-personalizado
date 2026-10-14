@@ -5,7 +5,9 @@ sinais.normalizar devolve). Peso 1 = indício; 2 = forte; 3 = quase certo.
 
 As categorias são as mesmas de sempre (o hub, o e-mail e o Trending usam
 essa lista). Os "temas" são o nível de baixo (subcategoria): a notícia
-de Tecnologia que fala de IA ganha o tema "inteligencia artificial".
+de Tecnologia que fala de IA ganha o tema "Inteligência artificial". O
+nome do tema é o que aparece no hub (e o que a pessoa segue); os termos
+de cada tema, como os da categoria, ficam normalizados.
 
 Pra melhorar a classificação, é aqui que se mexe: um termo novo, um peso
 diferente. O classificar.py imprime as notícias que ficaram sem
@@ -62,9 +64,9 @@ CATEGORIAS = {
             "segundo turno": 2, "primeiro turno": 2, "urna": 2, "votacao": 1, "plenario": 2, "ccj": 2,
         },
         "temas": {
-            "eleicoes": ["eleicao", "eleicoes", "segundo turno", "primeiro turno", "pesquisa eleitoral", "quaest", "datafolha", "candidato", "urna", "debate"],
-            "legislativo": ["camara dos deputados", "senado", "pec", "projeto de lei", "ccj", "plenario", "votacao"],
-            "judiciario": ["stf", "supremo", "moraes", "tse", "pgr"],
+            "Eleições": ["eleicao", "eleicoes", "segundo turno", "primeiro turno", "pesquisa eleitoral", "quaest", "datafolha", "candidato", "urna", "debate"],
+            "Legislativo": ["camara dos deputados", "senado", "pec", "projeto de lei", "ccj", "plenario", "votacao"],
+            "Judiciário": ["stf", "supremo", "moraes", "tse", "pgr"],
         },
     },
     "Mundo": {
@@ -82,8 +84,8 @@ CATEGORIAS = {
             **{pais: 2 for pais in PAISES},
         },
         "temas": {
-            "guerras e conflitos": ["guerra", "war", "gaza", "hamas", "ucrania", "ukraine", "cessar fogo", "ceasefire"],
-            "estados unidos": ["trump", "casa branca", "white house", "estados unidos", "eua"],
+            "Guerras e conflitos": ["guerra", "war", "gaza", "hamas", "ucrania", "ukraine", "cessar fogo", "ceasefire"],
+            "Estados Unidos": ["trump", "casa branca", "white house", "estados unidos", "eua"],
         },
     },
     "Finanças": {
@@ -104,10 +106,10 @@ CATEGORIAS = {
             "recuperacao judicial": 3, "fintech": 2, "pix": 1, "cartao de credito": 2, "aposentadoria": 1, "inss": 2,
         },
         "temas": {
-            "mercado financeiro": ["ibovespa", "b3", "acoes", "dolar", "wall street", "nasdaq", "dividendos", "ipo"],
-            "juros e inflacao": ["selic", "copom", "juros", "inflacao", "ipca", "fed", "inflation"],
-            "empresas": ["lucro", "balanco", "trimestre", "faturamento", "earnings", "fusao", "aquisicao"],
-            "cripto": ["bitcoin", "cripto", "criptomoeda"],
+            "Mercado financeiro": ["ibovespa", "b3", "acoes", "dolar", "wall street", "nasdaq", "dividendos", "ipo"],
+            "Juros e inflação": ["selic", "copom", "juros", "inflacao", "ipca", "fed", "inflation"],
+            "Empresas": ["lucro", "balanco", "trimestre", "faturamento", "earnings", "fusao", "aquisicao"],
+            "Criptomoedas": ["bitcoin", "cripto", "criptomoeda"],
         },
     },
     "Tecnologia": {
@@ -124,9 +126,9 @@ CATEGORIAS = {
             "pixel": 1, "xiaomi": 2, "motorola": 2, "windows": 2, "linux": 2, "update": 1, "atualizacao": 1,
         },
         "temas": {
-            "inteligencia artificial": ["inteligencia artificial", "artificial intelligence", "openai", "chatgpt", "anthropic", "gemini", "ia"],
-            "celulares": ["iphone", "android", "smartphone", "celular", "galaxy", "xiaomi", "motorola", "pixel"],
-            "seguranca digital": ["hacker", "hackers", "ciberseguranca", "cybersecurity", "vazamento de dados", "golpe digital"],
+            "Inteligência artificial": ["inteligencia artificial", "artificial intelligence", "openai", "chatgpt", "anthropic", "gemini", "ia"],
+            "Celulares": ["iphone", "android", "smartphone", "celular", "galaxy", "xiaomi", "motorola", "pixel"],
+            "Segurança digital": ["hacker", "hackers", "ciberseguranca", "cybersecurity", "vazamento de dados", "golpe digital"],
         },
     },
     "Games": {
@@ -139,8 +141,8 @@ CATEGORIAS = {
             "jogo de": 1, "lancamento do jogo": 3, "estudio": 1, "early access": 3, "battle royale": 3,
         },
         "temas": {
-            "consoles": ["playstation", "ps5", "xbox", "nintendo", "switch 2", "nintendo switch", "console"],
-            "e sports": ["e sports", "esports"],
+            "Consoles": ["playstation", "ps5", "xbox", "nintendo", "switch 2", "nintendo switch", "console"],
+            "E-sports": ["e sports", "esports"],
         },
     },
     "Cinema": {
@@ -153,8 +155,8 @@ CATEGORIAS = {
             "remake": 1, "festival de cannes": 3, "hollywood": 2, "roteiro": 1, "anime": 2,
         },
         "temas": {
-            "streaming": ["netflix", "hbo", "prime video", "apple tv", "streaming", "disney"],
-            "premiacoes": ["oscar", "emmy", "globo de ouro", "festival de cannes"],
+            "Streaming": ["netflix", "hbo", "prime video", "apple tv", "streaming", "disney"],
+            "Premiações": ["oscar", "emmy", "globo de ouro", "festival de cannes"],
         },
     },
     "Entretenimento": {
@@ -170,9 +172,9 @@ CATEGORIAS = {
             "singer": 2, "album release": 2, "concert": 2, "celebrity": 2, "axe": 2, "sertanejo": 2, "funk": 1,
         },
         "temas": {
-            "musica": ["cantor", "cantora", "musica", "album", "turne", "banda", "clipe", "spotify", "grammy", "sertanejo", "axe"],
-            "tv e novelas": ["novela", "reality", "bbb", "big brother", "a fazenda", "tv globo", "sbt"],
-            "celebridades": ["famosos", "celebridade", "influenciador", "influenciadora", "namoro"],
+            "Música": ["cantor", "cantora", "musica", "album", "turne", "banda", "clipe", "spotify", "grammy", "sertanejo", "axe"],
+            "TV e novelas": ["novela", "reality", "bbb", "big brother", "a fazenda", "tv globo", "sbt"],
+            "Celebridades": ["famosos", "celebridade", "influenciador", "influenciadora", "namoro"],
         },
     },
     "Esportes": {
@@ -194,9 +196,9 @@ CATEGORIAS = {
             "artilheiro": 3, "rebaixamento": 3, "classificacao": 1, "sub 20": 2, "feminino": 1,
         },
         "temas": {
-            "futebol": ["futebol", "brasileirao", "libertadores", "gol", "flamengo", "palmeiras", "corinthians", "champions league", "cbf"],
-            "automobilismo": ["f1", "formula 1", "gp"],
-            "basquete": ["nba", "basquete"],
+            "Futebol": ["futebol", "brasileirao", "libertadores", "gol", "flamengo", "palmeiras", "corinthians", "champions league", "cbf"],
+            "Automobilismo": ["f1", "formula 1", "gp"],
+            "Basquete": ["nba", "basquete"],
         },
     },
     "Saúde": {
@@ -209,8 +211,8 @@ CATEGORIAS = {
             "canetas emagrecedoras": 3, "ozempic": 3, "tirzepatida": 3, "health": 2, "disease": 2, "vaccine": 3,
         },
         "temas": {
-            "doencas": ["cancer", "diabetes", "dengue", "covid", "virus", "surto", "epidemia"],
-            "medicamentos": ["medicamento", "remedio", "anvisa", "ozempic", "tirzepatida", "canetas emagrecedoras"],
+            "Doenças": ["cancer", "diabetes", "dengue", "covid", "virus", "surto", "epidemia"],
+            "Medicamentos": ["medicamento", "remedio", "anvisa", "ozempic", "tirzepatida", "canetas emagrecedoras"],
         },
     },
     "Ciência": {
@@ -224,8 +226,8 @@ CATEGORIAS = {
             "researchers": 2, "space": 1,
         },
         "temas": {
-            "espaco": ["nasa", "espaco", "astronomia", "astronautas", "planeta", "galaxia", "telescopio"],
-            "meio ambiente": ["clima", "aquecimento global", "mudancas climaticas", "climate change", "meio ambiente", "desmatamento"],
+            "Espaço": ["nasa", "espaco", "astronomia", "astronautas", "planeta", "galaxia", "telescopio"],
+            "Meio ambiente": ["clima", "aquecimento global", "mudancas climaticas", "climate change", "meio ambiente", "desmatamento"],
         },
     },
     "Humor": {"termos": {}, "temas": {}},

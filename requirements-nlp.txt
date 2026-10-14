@@ -1,0 +1,7 @@
+# Nomes (spaCy, classificar.py) e vetores (fastembed, agrupar.py): só a
+# coleta e a "Fonte nova" instalam; o resumo diário fica sem esse peso.
+-r requirements.txt
+spacy>=3.8,<3.9
+pt_core_news_md @ https://github.com/explosion/spacy-models/releases/download/pt_core_news_md-3.8.0/pt_core_news_md-3.8.0-py3-none-any.whl
+en_core_web_md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl
+fastembed>=0.9,<1

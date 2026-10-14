@@ -6,8 +6,9 @@ agrupamento de histórias (agrupar.py) usam pra entender uma notícia.
 - palavras: as que carregam sentido (sem "de", "the", "para"...);
 - nomes: pessoas, empresas, lugares e siglas pelo jeito de escrever
   (palavras com maiúscula no meio da frase, "Banco Central", "STF",
-  "OpenAI"). Não é um reconhecedor de entidades de verdade (spaCy), mas
-  pega a maioria e não custa nada; dá pra trocar depois;
+  "OpenAI"). Desde o sql/045 os nomes vêm do spaCy (entidades.py); este
+  fica de reserva, pra quando o spaCy não está instalado (rodando local)
+  e pras notícias que ainda não foram classificadas;
 - numeros: placares, valores, versões ("2 a 1", "R$ 150 milhões",
   "iPhone 17"): notícias com números diferentes tendem a ser
   acontecimentos diferentes.

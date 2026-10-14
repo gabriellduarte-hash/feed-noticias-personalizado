@@ -2,7 +2,7 @@ name: Fonte nova
 
 # Disparado pelo hub quando alguém adiciona uma fonte (ou à mão, pela aba
 # Actions). Coleta só aquela fonte com o coletor completo (texto inteiro
-# via trafilatura, plano B do Google Notícias) e já resume com a IA, sem
+# via trafilatura, plano B do Google Notícias) e já classifica, sem
 # esperar a próxima coleta de hora em hora.
 on:
   workflow_dispatch:
@@ -30,9 +30,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: requirements*.txt
 
+      # Com o spaCy (nomes da classificação)
       - name: Instalar dependências
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-nlp.txt
 
       # FONTE_ID entra por variável de ambiente, nunca colado no comando:
       # assim um valor estranho no input não vira comando no shell

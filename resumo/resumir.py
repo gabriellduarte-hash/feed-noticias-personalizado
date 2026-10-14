@@ -1,4 +1,13 @@
 """
+DESDE 14/10 (sql/044) ESTE SCRIPT NÃO RODA MAIS DE HORA EM HORA. A IA
+resumia e classificava toda notícia e o volume (~3 mil por dia só das
+fontes de um usuário) consumiu o crédito. Agora:
+  - categoria, temas e nomes: coletor/classificar.py (sem IA);
+  - histórias e Trending: coletor/agrupar.py (sem IA);
+  - resumo: só das 10 notícias de cada e-mail, na hora do envio
+    (envio/enviar.py usa resumir_artigos e casar_resumos daqui).
+Rodar à mão continua possível (python resumir.py), se um dia valer.
+
 Gera um resumo por notícia com a API do Gemini, classifica cada uma numa
 categoria editorial fixa (Tecnologia, Finanças, etc.) e guarda de 3 a 5
 palavras-chave (base do Trending e, no futuro, de "notícias por tema").

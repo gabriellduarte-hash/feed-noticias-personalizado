@@ -19,6 +19,8 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      # A IA só entra aqui (sql/044): resume as 10 notícias de cada e-mail
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       # Foto de capa do e-mail (opcional: sem ela, o e-mail sai sem foto)
       UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
     steps:

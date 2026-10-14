@@ -7,10 +7,15 @@ Pra cada usuário com o resumo ligado e cujo horário já chegou hoje
 (horário de Brasília), e que ainda não recebeu o de hoje:
   1. pega as notícias que chegaram nas últimas 12 horas, só das coleções
      escolhidas (ou de todas), das mais recentes pras mais antigas;
-  2. separa as 10 mais recentes com resumo da IA (notícias completas), 5
-     manchetes do resto (só título e link) e conta o que sobrou (vira um
-     link pro hub). Assim o e-mail tem sempre o mesmo tamanho, siga a
-     pessoa 5 ou 50 fontes;
+  2. ordena por relevância, sem IA (sql/044): primeiro as histórias que
+     mais sites estão cobrindo (agrupar.py), depois as mais recentes, uma
+     notícia por história. Separa as 10 primeiras com texto (notícias
+     completas), 5 manchetes do resto (só título e link) e conta o que
+     sobrou (vira um link pro hub). Assim o e-mail tem sempre o mesmo
+     tamanho, siga a pessoa 5 ou 50 fontes;
+  2b. a IA (Gemini) entra só aqui: resume essas 10 que ainda não têm
+     resumo (o resumo fica guardado). Sem crédito ou sem chave, o e-mail
+     sai com o começo do texto;
   3. monta o HTML (resumo/template.py) e salva em `digests`;
   4. envia pelo Resend, do domínio do projeto (resumo@dailypaper.news),
      pro e-mail do usuário + a lista de digest_recipients: um e-mail por
@@ -51,13 +56,19 @@ RESPONDER_PARA = "feeddailypaper@gmail.com"
 # O Resend aceita poucas requisições por segundo: uma pausa entre envios
 PAUSA_ENTRE_ENVIOS = 0.6
 FUSO = ZoneInfo("America/Sao_Paulo")
-MAX_COMPLETAS = 10        # notícias com resumo da IA, as mais recentes
+MAX_COMPLETAS = 10        # notícias com resumo da IA, as mais relevantes
+TEXTO_PRA_RESUMIR = 400   # menos que isso não dá resumo (é só a chamada do feed)
+TRECHO_SEM_IA = 450       # sem a IA, o e-mail mostra o começo do texto até aqui
 MAX_MANCHETES = 5         # do resto, só título e link
 # Uma fonte que publica muito não ocupa o e-mail todo (em 07/10, 8 das 10
 # mais recentes eram do Diário do Comércio). Se faltar variedade, completa
 # com as mais recentes de qualquer fonte.
 MAX_COMPLETAS_POR_FONTE = 3
 MAX_MANCHETES_POR_FONTE = 2
+# Quem segue muitos sites de um assunto (celebridades, por exemplo) veria
+# o e-mail inteiro dele, porque esses sites repetem as mesmas histórias e
+# a cobertura sobe. No máximo 3 completas por categoria.
+MAX_COMPLETAS_POR_CATEGORIA = 3
 # Pelo Google Notícias vêm também páginas que não são notícia (o
 # AdoroCinema manda páginas de celebridade: "Milo Quifes"). Manchete sem
 # resumo precisa de pelo menos isso de palavras pra entrar no e-mail.
@@ -97,17 +108,20 @@ def inicio_do_periodo(agora):
 
 
 def noticias_do_periodo(conn, user_id, topic_ids, desde):
-    """Notícias que chegaram desde `desde`, das coleções escolhidas, mais
-    recentes primeiro. Com ou sem resumo: as sem resumo viram manchete."""
+    """Notícias que chegaram desde `desde`, das coleções escolhidas, com a
+    cobertura da história (quantos sites; 1 = notícia avulsa)."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
-            select a.title, a.url, a.published_at, a.image_url,
+            select a.id, a.title, a.url, a.published_at, a.image_url, a.content,
+                   coalesce(a.published_at, a.collected_at) as quando,
                    coalesce(s.name, '') as fonte, s.url as fonte_url,
-                   a.ai_summary as resumo, a.category as categoria
+                   a.ai_summary as resumo, a.category as categoria,
+                   a.historia_id, coalesce(h.fontes, 1) as cobertura
             from articles a
             join sources s on s.feed_id = a.feed_id
             join topics t on t.id = s.topic_id
+            left join historias h on h.id = a.historia_id
             where t.user_id = %(user_id)s
               and a.collected_at >= %(desde)s
               and (%(topic_ids)s::uuid[] is null or t.id = any(%(topic_ids)s::uuid[]))
@@ -118,17 +132,20 @@ def noticias_do_periodo(conn, user_id, topic_ids, desde):
         return cur.fetchall()
 
 
-def _mais_recentes(lista, limite, por_fonte):
-    """As `limite` primeiras de `lista` (já das mais recentes pras mais
-    antigas), no máximo `por_fonte` de cada fonte; se faltar variedade,
-    completa com as mais recentes que sobraram. Mantém a ordem."""
-    indices, contagem = [], Counter()
+def _primeiras(lista, limite, por_fonte, por_categoria=None):
+    """As `limite` primeiras de `lista` (já na ordem de relevância), no
+    máximo `por_fonte` de cada fonte (e `por_categoria` de cada categoria);
+    se faltar variedade, completa com as próximas que sobraram. Mantém a
+    ordem."""
+    indices, fontes, categorias = [], Counter(), Counter()
     for i, n in enumerate(lista):
         if len(indices) == limite:
             break
-        if contagem[n["fonte"]] < por_fonte:
+        categoria = n.get("categoria") or "Outros"
+        if fontes[n["fonte"]] < por_fonte and (por_categoria is None or categorias[categoria] < por_categoria):
             indices.append(i)
-            contagem[n["fonte"]] += 1
+            fontes[n["fonte"]] += 1
+            categorias[categoria] += 1
     for i in range(len(lista)):
         if len(indices) == limite:
             break
@@ -137,15 +154,76 @@ def _mais_recentes(lista, limite, por_fonte):
     return [lista[i] for i in sorted(indices)]
 
 
+def por_relevancia(noticias):
+    """Sem IA: as histórias que mais sites estão cobrindo primeiro; na
+    mesma cobertura, as mais recentes. Uma notícia por história."""
+    ordenadas = sorted(noticias, key=lambda n: (-n["cobertura"], -n["quando"].timestamp()))
+    vistas, saida = set(), []
+    for n in ordenadas:
+        if n["historia_id"]:
+            if n["historia_id"] in vistas:
+                continue
+            vistas.add(n["historia_id"])
+        saida.append(n)
+    return saida
+
+
 def separar(noticias):
-    """(completas, manchetes, quantas sobraram). `noticias` já vem das
-    mais recentes pras mais antigas."""
-    completas = _mais_recentes([n for n in noticias if n["resumo"]], MAX_COMPLETAS, MAX_COMPLETAS_POR_FONTE)
+    """(completas, manchetes, quantas sobraram)."""
+    ordenadas = por_relevancia(noticias)
+    com_texto = [n for n in ordenadas if n["resumo"] or len(n["content"] or "") >= TEXTO_PRA_RESUMIR]
+    completas = _primeiras(com_texto, MAX_COMPLETAS, MAX_COMPLETAS_POR_FONTE, MAX_COMPLETAS_POR_CATEGORIA)
     escolhidas = {id(n) for n in completas}
-    resto = [n for n in noticias if id(n) not in escolhidas]
-    candidatas = [n for n in resto if n["resumo"] or len(n["title"].split()) >= MIN_PALAVRAS_MANCHETE]
-    manchetes = _mais_recentes(candidatas, MAX_MANCHETES, MAX_MANCHETES_POR_FONTE)
-    return completas, manchetes, len(resto) - len(manchetes)
+    resto = [n for n in ordenadas if id(n) not in escolhidas]
+    candidatas = [n for n in resto if len(n["title"].split()) >= MIN_PALAVRAS_MANCHETE]
+    manchetes = _primeiras(candidatas, MAX_MANCHETES, MAX_MANCHETES_POR_FONTE)
+    return completas, manchetes, len(noticias) - len(completas) - len(manchetes)
+
+
+def trecho(texto):
+    """Sem a IA: o começo do texto, até TRECHO_SEM_IA, fechando a frase."""
+    texto = " ".join((texto or "").split("\n")[:3]).strip()
+    if len(texto) <= TRECHO_SEM_IA:
+        return texto
+    corte = texto[:TRECHO_SEM_IA]
+    fim = max(corte.rfind(". "), corte.rfind("! "), corte.rfind("? "))
+    return corte[: fim + 1] if fim > 150 else corte.rsplit(" ", 1)[0] + "…"
+
+
+def resumir_as_escolhidas(conn, completas, simular=False):
+    """A IA só aqui (sql/044): resume, num pedido só, as notícias escolhidas
+    pro e-mail que ainda não têm resumo, e guarda o resumo (a mesma notícia
+    no e-mail de outra pessoa não paga de novo). Sem chave, sem crédito ou
+    com erro, o e-mail sai com o começo do texto."""
+    faltando = [n for n in completas if not n["resumo"]]
+    if not faltando:
+        return 0
+    feitos = 0
+    if simular:
+        print(f"  simulação: a IA resumiria {len(faltando)} notícia(s)")
+    elif os.environ.get("GEMINI_API_KEY"):
+        try:
+            import resumir  # resumo/resumir.py (o caminho já está no sys.path)
+            from google import genai
+
+            cliente = genai.Client(http_options={"timeout": resumir.TIMEOUT_REQUISICAO_MS})
+            artigos = [{"id": n["id"], "title": n["title"], "content": n["content"]} for n in faltando]
+            casados = resumir.casar_resumos(artigos, resumir.resumir_artigos(cliente, "Resumo do dia", artigos))
+            resumos = {str(c["id"]): c["resumo"] for c in casados if c["resumo"]}
+            with conn.cursor() as cur:
+                for id_, resumo in resumos.items():
+                    cur.execute("update articles set ai_summary = %s where id = %s", (resumo, id_))
+            conn.commit()
+            for n in faltando:
+                n["resumo"] = resumos.get(str(n["id"]))
+            feitos = len(resumos)
+        except Exception as erro:
+            conn.rollback()
+            print(f"  ::warning::IA indisponível ({type(erro).__name__}: {str(erro)[:160]}); vai o começo do texto")
+    for n in completas:
+        if not n["resumo"]:
+            n["resumo"] = trecho(n["content"])
+    return feitos
 
 
 def agrupar_por_categoria(cards):
@@ -225,6 +303,9 @@ def main():
             if not noticias:
                 print("  nada novo desde o último resumo, pulando (sem e-mail vazio)")
                 continue
+            resumidas = resumir_as_escolhidas(conn, completas, args.simular)
+            if resumidas:
+                print(f"  {resumidas} resumo(s) feitos pela IA agora")
 
             html = montar_email_html(
                 agrupar_por_categoria(completas), agora.date(), foto,

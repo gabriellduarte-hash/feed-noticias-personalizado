@@ -22,7 +22,6 @@ jobs:
     timeout-minutes: 15
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       FONTE_ID: ${{ inputs.fonte_id }}
     steps:
       - uses: actions/checkout@v7
@@ -66,7 +65,8 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: Resumir e categorizar com IA
-        working-directory: resumo
-        run: python resumir.py
-        timeout-minutes: 15
+      # Sem IA (sql/044): a IA só resume o que vai pro e-mail
+      - name: Classificar (sem IA)
+        working-directory: coletor
+        run: python classificar.py
+        timeout-minutes: 5

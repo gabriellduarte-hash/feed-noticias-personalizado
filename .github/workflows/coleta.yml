@@ -21,7 +21,6 @@ jobs:
     timeout-minutes: 30
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       # Senha da rota de coleta do hub (o mesmo valor na Vercel). Sem ela,
       # o passo "Sites que barram o GitHub" é pulado.
       COLETA_SECRET: ${{ secrets.COLETA_SECRET }}
@@ -77,8 +76,17 @@ jobs:
         timeout-minutes: 5
         continue-on-error: true
 
-      # o próprio resumir.py para em ~12 min (o que sobrar fica pra próxima hora)
-      - name: Resumir e categorizar com IA
-        working-directory: resumo
-        run: python resumir.py
-        timeout-minutes: 15
+      # Sem IA (sql/044): categoria, temas e nomes pela taxonomia
+      # (taxonomia.py) e pela categoria do site. A IA agora só resume o que
+      # vai pro e-mail, na hora do envio (workflow "Resumo diário").
+      - name: Classificar (sem IA)
+        working-directory: coletor
+        run: python classificar.py
+        timeout-minutes: 5
+
+      # Histórias: notícias de sites diferentes sobre o mesmo acontecimento
+      # (nota de semelhança). Define o Trending e a relevância no e-mail.
+      - name: Agrupar histórias (sem IA)
+        working-directory: coletor
+        run: python agrupar.py
+        timeout-minutes: 10

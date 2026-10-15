@@ -53,6 +53,33 @@ def palavras(texto, minimo=3):
     return [p for p in normalizar(texto).split() if len(p) >= minimo and p not in PALAVRAS_VAZIAS and not p.isdigit()]
 
 
+def radical(palavra):
+    """A mesma forma pro singular e o plural (sem acento, já normalizada):
+    "filme"/"filmes" -> "film", "serie"/"series" -> "seri", "eleicao"/
+    "eleicoes" -> "eleicao", "animal"/"animais" -> "animal", "jogo"/"jogos"
+    -> "jogo". Não é um radical de dicionário: é só pra comparar palavras
+    (os temas aqui; a busca no hub usa a mesma regra, em lib/busca.ts)."""
+    p = palavra
+    if len(p) <= 3 or not p.isalpha():
+        return p
+    for fim, troca in (("oes", "ao"), ("aes", "ao"), ("aos", "ao")):
+        if p.endswith(fim):
+            return p[: -len(fim)] + troca
+    # "animais" -> "animal"; "pais" e "mais" (4 letras) ficam como estão
+    for fim, troca in (("ais", "al"), ("eis", "el"), ("ois", "ol"), ("uis", "ul")):
+        if p.endswith(fim) and len(p) > 4:
+            return p[: -len(fim)] + troca
+    if p.endswith("ns"):
+        return p[:-2] + "m"
+    if p.endswith("es") and len(p) > 4:
+        return p[:-2]
+    if p.endswith("e"):
+        return p[:-1]
+    if p.endswith("s") and not p.endswith(("ss", "us", "is")):
+        return p[:-1]
+    return p
+
+
 def numeros(texto):
     """Números do texto, normalizados ("1.500" -> "1500", "2,5" -> "2.5")."""
     saida = set()

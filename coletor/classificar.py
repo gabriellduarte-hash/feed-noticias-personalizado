@@ -10,7 +10,10 @@ Como decide a categoria:
      gerais;
   3. fica com a mais pontuada. Sem sinal suficiente: a do site, ou
      "Outros". A confiança (0 a 1) vai junto, pra saber o que revisar.
-Temas: os subassuntos da categoria que apareceram (taxonomia.py).
+Temas: o tema amplo (a categoria) e os específicos que apareceram (Filmes,
+Fofoca, Quadrinhos...; catálogo em temas.py, uma notícia pode ter vários).
+O catálogo é copiado pro banco a cada rodada (catalogo_temas, sql/047),
+pra busca do hub achar o tema pelos sinônimos.
 Nomes: pessoas, organizações, lugares e obras, pelo spaCy (entidades.py).
 Vão em dois lugares: `entidades` (como aparecem, com o tipo, pro hub
 mostrar e a pessoa seguir) e `palavras_chave` (só as chaves
@@ -37,6 +40,7 @@ from db import get_connection
 from entidades import extrair
 from sinais import normalizar
 from taxonomia import CATEGORIAS, DA_FONTE, FONTES_ESPECIALIZADAS
+from temas import detectar as detectar_temas, linhas_do_catalogo
 
 PESO_TITULO = 3
 PESO_TEXTO = 1
@@ -97,9 +101,7 @@ def classificar(titulo, texto, categoria_do_site=None):
         segundo = ordem[1][1] if len(ordem) > 1 else 0
         confianca = round(min(1.0, (melhor - segundo) / melhor + 0.2), 2)
 
-    presentes = set(termos_titulo) | set(termos_texto)
-    temas = [tema for tema, lista in CATEGORIAS.get(categoria, {}).get("temas", {}).items() if presentes & set(lista)]
-    return categoria, temas, confianca
+    return categoria, detectar_temas(titulo, texto, categoria), confianca
 
 
 # ------------------------------------------------------------------ banco
@@ -156,6 +158,25 @@ def gravar(conn, tabela, resultados):
     conn.commit()
 
 
+def sincronizar_catalogo(conn):
+    """O catálogo de temas (temas.py) no banco, igualzinho: o hub busca
+    os temas por nome e sinônimo nessa tabela."""
+    linhas = linhas_do_catalogo()
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            """
+            insert into catalogo_temas (nome, grupo, sinonimos, ordem) values %s
+            on conflict (nome) do update set grupo = excluded.grupo, sinonimos = excluded.sinonimos,
+              ordem = excluded.ordem, atualizado_em = now()
+            """,
+            linhas,
+            template="(%s, %s, %s::text[], %s)",
+        )
+        cur.execute("delete from catalogo_temas where not (nome = any(%s))", ([n for n, *_ in linhas],))
+    conn.commit()
+
+
 def atualizar_sugestoes(conn):
     """Os temas e nomes mais citados nos últimos 3 dias (tabela
     sugestoes_seguir, sql/045): o que o hub sugere pra seguir. Nome citado
@@ -183,13 +204,15 @@ def atualizar_sugestoes(conn):
         cur.execute(
             """
             insert into sugestoes_seguir (tipo, chave, rotulo, detalhe, noticias)
-            select 'tema', t, t, mode() within group (order by n.category), count(distinct n.url)
+            select 'tema', t.nome, t.nome, ct.grupo, count(distinct n.url)
             from (
-              select url, temas, category from articles where collected_at > now() - interval '3 days'
+              select url, temas from articles where collected_at > now() - interval '3 days'
               union all
-              select url, temas, category from catalog_articles where collected_at > now() - interval '3 days'
-            ) n, unnest(n.temas) t
-            group by t
+              select url, temas from catalog_articles where collected_at > now() - interval '3 days'
+            ) n
+            cross join lateral unnest(n.temas) as t(nome)
+            left join catalogo_temas ct on ct.nome = t.nome
+            group by t.nome, ct.grupo
             """
         )
     conn.commit()
@@ -233,6 +256,7 @@ def main():
         if args.avaliar:
             avaliar(conn)
             return
+        sincronizar_catalogo(conn)
         for tabela in ("articles", "catalog_articles"):
             total, inicio = 0, time.time()
             while True:

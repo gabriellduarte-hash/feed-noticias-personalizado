@@ -14,6 +14,12 @@ Temas: o tema amplo (a categoria) e os específicos que apareceram (Filmes,
 Fofoca, Quadrinhos...; catálogo em temas.py, uma notícia pode ter vários).
 O catálogo é copiado pro banco a cada rodada (catalogo_temas, sql/047),
 pra busca do hub achar o tema pelos sinônimos.
+
+Apelidos (sql/048): de hora em hora, descobre o nome curto de pessoa que
+quase sempre aparece junto do mesmo nome longo ("lula" -> "luiz inacio
+lula da silva") e grava as duas chaves nas notícias: quem segue um acha
+as do outro. Também calcula o "surgindo agora" (nomes muito mais citados
+nas últimas 24h) e sorteia notícias pra conferir os temas à mão.
 Nomes: pessoas, organizações, lugares e obras, pelo spaCy (entidades.py).
 Vão em dois lugares: `entidades` (como aparecem, com o tipo, pro hub
 mostrar e a pessoa seguir) e `palavras_chave` (só as chaves
@@ -49,6 +55,17 @@ BONUS_FONTE_ESPECIALIZADA = 4
 BONUS_FONTE_GERAL = 1.5
 SINAL_MINIMO = 3          # abaixo disso, vale a categoria do site
 LOTE = 2000
+# Apelido: o nome curto (uma palavra) aparece junto do mesmo nome longo em
+# pelo menos APELIDO_MINIMO notícias e em APELIDO_DOMINIO das vezes em que
+# aparece junto de algum nome longo que o contém. Só pessoas: "Fazenda"
+# (A Fazenda ou o Ministério?) e "Manchester" (City ou United?) ficam fora.
+APELIDO_MINIMO = 8
+APELIDO_DOMINIO = 0.7
+# Amostra de temas pra conferir à mão (Relatórios › Temas certos?)
+TEMAS_PENDENTES_MINIMO = 10
+TEMAS_POR_SORTEIO = 20
+# Os temas amplos (as categorias): não contam na amostra
+AMPLOS = {"Política", "Mundo", "Finanças", "Tecnologia", "Games", "Cinema", "Entretenimento", "Esportes", "Saúde", "Ciência", "Humor"}
 
 # termo normalizado -> [(categoria, peso)]; n-gramas até 4 palavras
 INDICE = defaultdict(list)
@@ -158,6 +175,124 @@ def gravar(conn, tabela, resultados):
     conn.commit()
 
 
+def carregar_apelidos(conn):
+    """{curto: longo} (tabela apelidos, sql/048)."""
+    with conn.cursor() as cur:
+        cur.execute("select curto, longo from apelidos")
+        apelidos = dict(cur.fetchall())
+    conn.commit()
+    return apelidos
+
+
+def com_apelidos(chaves, apelidos, longos_de):
+    """As chaves da notícia mais as dos apelidos: o longo puxa o curto
+    ("luiz inacio lula da silva" -> "lula"); o curto puxa o longo, a não
+    ser que a notícia tenha outro nome longo com ele ("flavio" numa notícia
+    com "flavio dino" não vira "flavio bolsonaro")."""
+    saida = list(chaves)
+    presentes = set(chaves)
+    for chave in chaves:
+        for curto in longos_de.get(chave, ()):
+            if curto not in presentes:
+                saida.append(curto)
+                presentes.add(curto)
+        longo = apelidos.get(chave)
+        if longo and longo not in presentes:
+            outros = [c for c in presentes if " " in c and chave in c.split() and c != longo]
+            if not outros:
+                saida.append(longo)
+                presentes.add(longo)
+    return saida
+
+
+def atualizar_apelidos(conn):
+    """Descobre os apelidos nos últimos 7 dias e grava em `apelidos`."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select entidades from articles where collected_at > now() - interval '7 days' and entidades is not null
+            union all
+            select entidades from catalog_articles where collected_at > now() - interval '7 days' and entidades is not null
+            """
+        )
+        linhas = cur.fetchall()
+    conn.commit()
+    juntos, com_algum, tipos = Counter(), Counter(), defaultdict(Counter)
+    for (entidades,) in linhas:
+        chaves = {e["chave"] for e in entidades}
+        for e in entidades:
+            tipos[e["chave"]][e["tipo"]] += 1
+        longos = [c for c in chaves if " " in c]
+        for curto in chaves:
+            if " " in curto or len(curto) < 3 or curto.isdigit():
+                continue
+            dentro = [l for l in longos if curto in l.split()]
+            if dentro:
+                com_algum[curto] += 1
+                for longo in dentro:
+                    juntos[(curto, longo)] += 1
+    melhor = {}
+    for (curto, longo), n in juntos.items():
+        if n > melhor.get(curto, ("", 0))[1]:
+            melhor[curto] = (longo, n)
+
+    def pessoa(chave):
+        return tipos[chave] and tipos[chave].most_common(1)[0][0] == "pessoa"
+
+    apelidos = [
+        (curto, longo, n)
+        for curto, (longo, n) in melhor.items()
+        if n >= APELIDO_MINIMO and n / com_algum[curto] >= APELIDO_DOMINIO and pessoa(curto) and pessoa(longo)
+    ]
+    with conn.cursor() as cur:
+        cur.execute("delete from apelidos")
+        if apelidos:
+            execute_values(cur, "insert into apelidos (curto, longo, vezes) values %s", apelidos)
+    conn.commit()
+    return len(apelidos)
+
+
+def sortear_temas_para_avaliar(conn):
+    """Quando faltam notícias pra conferir, sorteia mais: das últimas 24h,
+    com tema específico, variando os temas (uma por tema, até
+    TEMAS_POR_SORTEIO)."""
+    with conn.cursor() as cur:
+        cur.execute("select count(*) from temas_avaliados where respondido_em is null")
+        if cur.fetchone()[0] >= TEMAS_PENDENTES_MINIMO:
+            conn.commit()
+            return 0
+        cur.execute(
+            """
+            select c.url, c.title, left(coalesce(c.content, ''), 400), f.name, c.category, c.temas
+            from catalog_articles c join feed_catalog f on f.id = c.catalog_id
+            where c.collected_at > now() - interval '24 hours' and cardinality(c.temas) > 0
+              and not exists (select 1 from temas_avaliados t where t.url = c.url)
+            order by random()
+            limit 500
+            """
+        )
+        candidatas = cur.fetchall()
+    escolhidas, vistos = [], set()
+    for url, titulo, trecho, fonte, categoria, temas in candidatas:
+        especificos = [t for t in temas if t not in AMPLOS]
+        novo = next((t for t in especificos if t not in vistos), None)
+        if novo:
+            vistos.add(novo)
+            escolhidas.append((url, titulo, trecho, fonte, categoria, especificos))
+        if len(escolhidas) >= TEMAS_POR_SORTEIO:
+            break
+    with conn.cursor() as cur:
+        if escolhidas:
+            execute_values(
+                cur,
+                "insert into temas_avaliados (url, titulo, trecho, fonte, categoria, temas) values %s on conflict (url) do nothing",
+                escolhidas,
+                template="(%s, %s, %s, %s, %s, %s::text[])",
+            )
+    conn.commit()
+    return len(escolhidas)
+
+
 def sincronizar_catalogo(conn):
     """O catálogo de temas (temas.py) no banco, igualzinho: o hub busca
     os temas por nome e sinônimo nessa tabela."""
@@ -197,8 +332,54 @@ def atualizar_sugestoes(conn):
             ) n, jsonb_array_elements(n.entidades) e
             group by e->>'chave'
             having count(distinct n.url) >= 3
+               -- o apelido curto ("lula") some: as notícias dele já têm o nome longo
+               and e->>'chave' not in (select curto from apelidos)
             order by count(distinct n.url) desc
             limit 3000
+            """
+        )
+        # Surgindo agora: muito mais citado nas últimas 24h do que na média
+        # dos 6 dias antes, em 2+ histórias e 3+ sites (top 15 dos nomes que
+        # passam; a ordem é a da nota)
+        cur.execute(
+            """
+            with mencoes as (
+              select e->>'chave' as chave, n.collected_at, n.historia_id, n.fonte
+              from (
+                select collected_at, historia_id, entidades, feed_id::text as fonte from articles
+                where collected_at > now() - interval '7 days' and entidades is not null
+                union all
+                select collected_at, historia_id, entidades, catalog_id::text from catalog_articles
+                where collected_at > now() - interval '7 days' and entidades is not null
+              ) n, jsonb_array_elements(n.entidades) e
+            ),
+            recentes as (
+              select chave, count(*) as n24, count(distinct historia_id) as historias, count(distinct fonte) as fontes
+              from mencoes where collected_at > now() - interval '24 hours'
+              group by chave
+            ),
+            antes as (
+              select chave, count(*) / 6.0 as por_dia from mencoes
+              where collected_at <= now() - interval '24 hours'
+              group by chave
+            )
+            update sugestoes_seguir s
+            set em_alta = x.nota
+            from (
+              select r.chave, r.n24 / (coalesce(a.por_dia, 0) + 2) as nota
+              from recentes r
+              left join antes a using (chave)
+              join sugestoes_seguir n on n.tipo = 'nome' and n.chave = r.chave
+              where r.historias >= 2 and r.fontes >= 3 and r.n24 >= 5
+                -- pessoas, obras e eventos com nome de 2 a 4 palavras (ou com
+                -- número, "gta 6"): "Senado" num dia agitado ou "Jason" solto não
+                and n.detalhe in ('pessoa', 'outro')
+                and (r.chave like '% %' or r.chave ~ '[0-9]')
+                and array_length(string_to_array(r.chave, ' '), 1) <= 4
+              order by nota desc
+              limit 15
+            ) x
+            where s.tipo = 'nome' and s.chave = x.chave
             """
         )
         cur.execute(
@@ -257,6 +438,10 @@ def main():
             avaliar(conn)
             return
         sincronizar_catalogo(conn)
+        apelidos = carregar_apelidos(conn)
+        longos_de = defaultdict(list)
+        for curto, longo in apelidos.items():
+            longos_de[longo].append(curto)
         for tabela in ("articles", "catalog_articles"):
             total, inicio = 0, time.time()
             while True:
@@ -267,14 +452,18 @@ def main():
                 resultados = []
                 for linha, achados in zip(linhas, nomes):
                     categoria, temas, confianca = classificar(linha["title"], linha["content"], linha["categoria_do_site"])
-                    chaves = list(dict.fromkeys(n["chave"] for n in achados))
+                    chaves = com_apelidos(list(dict.fromkeys(n["chave"] for n in achados)), apelidos, longos_de)
                     resultados.append((str(linha["id"]), categoria, temas, confianca, chaves, json.dumps(achados, ensure_ascii=False)))
                 gravar(conn, tabela, resultados)
                 total += len(resultados)
                 if args.dias or len(linhas) < LOTE:
                     break
             print(f"{tabela}: {total} notícia(s) classificada(s) ({time.time() - inicio:.1f}s)")
+        print(f"{atualizar_apelidos(conn)} apelido(s)")
         atualizar_sugestoes(conn)
+        sorteados = sortear_temas_para_avaliar(conn)
+        if sorteados:
+            print(f"{sorteados} notícia(s) sorteada(s) pra conferir os temas")
     finally:
         conn.close()
 

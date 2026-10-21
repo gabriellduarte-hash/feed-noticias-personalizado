@@ -163,6 +163,9 @@ def entradas_do_site(entradas, url_site):
 # ("Ver Homem-Aranha online"), como no AdoroCinema.
 PAGINA_DE_LISTAGEM = re.compile(r"(^|\s)(p[áa]gina|page)\s+\d+", re.I)
 PAGINA_DE_STREAMING = re.compile(r"^(ver|assistir)\b.*\bonline$", re.I)
+# Página de tag do WordPress ("Arquivo para iPhone Duo"), que o Google
+# devolve como se fosse notícia (MacMagazine, PAPELPOP)
+PAGINA_DE_TAG = re.compile(r"^(arquivos?\s+para|archives?\s+for)\b", re.I)
 MIN_PALAVRAS_NOTICIA = 4
 
 
@@ -171,6 +174,7 @@ def eh_noticia_do_google_news(titulo):
     return not (
         PAGINA_DE_LISTAGEM.search(titulo)
         or PAGINA_DE_STREAMING.search(titulo)
+        or PAGINA_DE_TAG.search(titulo)
         or len(titulo.split()) < MIN_PALAVRAS_NOTICIA
     )
 

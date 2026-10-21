@@ -5,3 +5,6 @@ __pycache__/
 
 # prévias do e-mail geradas pelo enviar.py --simular
 envio/previa-*.html
+
+# cache local do wrangler (worker/)
+.wrangler/

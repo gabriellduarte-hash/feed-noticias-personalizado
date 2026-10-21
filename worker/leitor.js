@@ -14,6 +14,8 @@
 //   SEGREDO   (Secret): a senha; a mesma em WORKER_SECRET no coletor
 //   DOMINIOS  (Text, opcional): sites aceitos, separados por vírgula
 //             ("adrenaline.com.br,placar.com.br"). Vazio = qualquer um.
+// O resto (nome e região: perto de São Paulo) fica no wrangler.jsonc,
+// publicado com "npx wrangler deploy" de dentro desta pasta.
 //
 // Uso: GET https://<worker>.workers.dev/?url=<endereço>
 //      Authorization: Bearer <SEGREDO>

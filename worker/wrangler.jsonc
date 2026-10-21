@@ -1,0 +1,23 @@
+// Configuração do Worker (worker/leitor.js) pro wrangler, a ferramenta de
+// linha de comando do Cloudflare. Publicar (de dentro desta pasta):
+//   npx wrangler login     (uma vez: abre o navegador pra entrar na conta)
+//   npx wrangler deploy
+// A senha (SEGREDO) continua a que está no painel: o deploy não mexe nos
+// Secrets.
+{
+  // o mesmo nome do Worker criado no painel (o endereço não muda)
+  "name": "dailypaper-leitor",
+  "main": "leitor.js",
+  "compatibility_date": "2026-10-01",
+
+  // Roda no data center do Cloudflare mais perto de São Paulo, e não
+  // perto de quem chama. Chamado pelo GitHub, o Worker rodava nos EUA, e
+  // de lá o Adrenaline responde 403; do Brasil, responde normalmente
+  // (21/10). Vale pra todos os sites lidos pelo Worker: no teste feito do
+  // Brasil, todos passaram.
+  "placement": { "region": "aws:sa-east-1" },
+
+  // Mantém as variáveis de texto criadas no painel (DOMINIOS, se houver):
+  // sem isso, o deploy apagaria as que não estão neste arquivo
+  "keep_vars": true,
+}

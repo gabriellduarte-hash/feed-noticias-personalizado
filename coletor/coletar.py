@@ -6,9 +6,10 @@ as notícias dele. A deduplicação é feita pelo próprio banco, via
 `on conflict (feed_id, url) do nothing`.
 
 Feed que bloqueia as máquinas do GitHub (responde 401/403/429 ou derruba a
-conexão) fica marcado com coletar_pelo_hub (sql/040): daí em diante quem
-coleta é o hub, na Vercel (/api/coletar-bloqueados), chamado no fim da
-coleta de hora em hora. Sites abertos, só que barram servidores de nuvem.
+conexão) fica marcado com coletar_pelo_hub (sql/040). Sites abertos, só
+que barram servidores de nuvem. Daí em diante o feed e as páginas dele
+vêm pelo Worker do Cloudflare (rede.py); sem o Worker configurado, quem
+coleta é o hub, na Vercel (/api/coletar-bloqueados).
 
 Fonte que acabou de ser seguida (ainda sem nenhum artigo): a primeira
 coleta traz só as notícias das últimas 24 horas. Se não houver nenhuma
@@ -28,6 +29,7 @@ import requests
 import trafilatura
 from psycopg2.extras import RealDictCursor
 
+from apis import noticias_pela_api, tem_api
 from alternativas import (
     eh_google_news,
     entradas_do_site,
@@ -38,6 +40,7 @@ from alternativas import (
 )
 from db import get_connection, resolver_feed
 from manchetes import DIAS_PRA_COMPARAR, separar_repetidas
+from rede import RobotsNaoDeixa, baixar, tem_worker
 from texto import consertar_acentos, texto_da_pagina, texto_do_rss
 
 USER_AGENT = "DailyPaperBot/0.1 (uso pessoal - estudo)"
@@ -61,20 +64,20 @@ def limpar_html(texto):
 def buscar_fontes(conn, feed_id=None, so_sem_artigos=False):
     """Os feeds que alguém segue; ou só um (--fonte); ou só os que ainda
     não têm nenhum artigo (--sem-artigos), pra acabou-de-ser-seguido.
-    Feed que ninguém segue mais não é coletado, e o que bloqueia o GitHub
-    fica com o hub (coletar_pelo_hub)."""
+    Feed que ninguém segue mais não é coletado. O que bloqueia o GitHub
+    (coletar_pelo_hub) vem pelo Worker; sem ele, fica com o hub."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """
-            select f.id, f.url, f.type,
+            select f.id, f.url, f.type, f.coletar_pelo_hub as pelo_worker,
                    exists (select 1 from articles a where a.feed_id = f.id) as tem_artigos
             from feeds f
             where exists (select 1 from sources s where s.feed_id = f.id)
-              and not f.coletar_pelo_hub
+              and (not f.coletar_pelo_hub or %(worker)s)
               and (%(feed)s::uuid is null or f.id = %(feed)s::uuid)
               and (not %(sem_artigos)s or not exists (select 1 from articles a where a.feed_id = f.id))
             """,
-            {"feed": feed_id, "sem_artigos": so_sem_artigos},
+            {"feed": feed_id, "sem_artigos": so_sem_artigos, "worker": tem_worker()},
         )
         return cur.fetchall()
 
@@ -115,10 +118,10 @@ def extrair_imagem_rss(entry):
     return None
 
 
-def baixar_feed(url):
+def baixar_feed(url, pelo_worker=False):
     """Com o nosso User-Agent: o feedparser.parse(url) usaria o dele, que
-    alguns sites bloqueiam."""
-    resposta = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+    alguns sites bloqueiam. pelo_worker: site que barra o GitHub (rede.py)."""
+    resposta = baixar(url, USER_AGENT, pelo_worker)
     resposta.raise_for_status()
     return feedparser.parse(resposta.content)
 
@@ -134,8 +137,8 @@ def bloqueou(erro):
 def coletar_rss(source):
     google_news = eh_google_news(source["url"])
     try:
-        entradas = baixar_feed(source["url"]).entries
-    except requests.RequestException as erro:
+        entradas = baixar_feed(source["url"], source.get("pelo_worker")).entries
+    except (requests.RequestException, RobotsNaoDeixa) as erro:
         if google_news:
             raise
         print(f"  RSS falhou ({erro})")
@@ -171,6 +174,19 @@ def coletar_rss(source):
     return artigos
 
 
+def coletar_pela_api(source):
+    """Site com API pública (apis.py, ex.: ESPN): lista, texto e foto numa
+    chamada. Se a API falhar, cai no RSS (e no Google Notícias); se ela
+    barrar o GitHub, a fonte vai pro hub como as outras."""
+    try:
+        return noticias_pela_api(source["url"], USER_AGENT)
+    except (requests.RequestException, ValueError) as erro:
+        print(f"  API falhou ({erro}); tentando o RSS")
+        if bloqueou(erro):
+            source["bloqueado"] = True
+        return coletar_rss(source)
+
+
 def pode_coletar(url):
     """Confere o robots.txt do domínio antes de fazer scraping bruto.
 
@@ -185,7 +201,7 @@ def pode_coletar(url):
     robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
     rp = robotparser.RobotFileParser()
     try:
-        resp = requests.get(robots_url, headers={"User-Agent": USER_AGENT}, timeout=10)
+        resp = baixar(robots_url, USER_AGENT, timeout=10)
         resp.raise_for_status()
         rp.parse(resp.text.splitlines())
         return rp.can_fetch(USER_AGENT, url)
@@ -197,11 +213,12 @@ def pode_coletar(url):
 
 def coletar_scrape(source):
     url = source["url"]
-    if not pode_coletar(url):
+    # pelo Worker, quem confere o robots.txt é ele (RobotsNaoDeixa)
+    if not source.get("pelo_worker") and not pode_coletar(url):
         print(f"  robots.txt bloqueia coleta de {url}, pulando.")
         return []
 
-    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=10)
+    resp = baixar(url, USER_AGENT, source.get("pelo_worker"), timeout=10)
     resp.raise_for_status()
 
     texto = texto_da_pagina(resp.content)
@@ -227,7 +244,8 @@ def coletar_sitemap(source, conn):
     """Fonte sem RSS, lida pelo sitemap de notícias (ver alternativas.py).
     O sitemap só dá link, título, data e às vezes a imagem; o texto vem
     de baixar cada matéria nova com o trafilatura, como no scrape."""
-    itens = ler_sitemap(source["url"], USER_AGENT, limite=MAX_MATERIAS_SITEMAP)
+    pelo_worker = source.get("pelo_worker")
+    itens = ler_sitemap(source["url"], USER_AGENT, limite=MAX_MATERIAS_SITEMAP, pelo_worker=pelo_worker)
     with conn.cursor() as cur:
         cur.execute(
             "select url from articles where feed_id = %s and url = any(%s)",
@@ -241,9 +259,9 @@ def coletar_sitemap(source, conn):
         if item["url"] in ja_salvas:
             continue
         texto, imagem, autor = None, item["image_url"], None
-        if pode_coletar(item["url"]):
+        if pelo_worker or pode_coletar(item["url"]):
             try:
-                resp = requests.get(item["url"], headers={"User-Agent": USER_AGENT}, timeout=10)
+                resp = baixar(item["url"], USER_AGENT, pelo_worker, timeout=10)
                 resp.raise_for_status()
                 texto = texto_da_pagina(resp.content)
                 metadata = trafilatura.extract_metadata(resp.content)
@@ -355,7 +373,8 @@ def salvar_artigos(conn, feed_id, artigos):
 
 
 def marcar_pelo_hub(conn, feed_id, url):
-    """sql/040: o feed (e a mesma fonte no catálogo) passa a ser coletado pelo hub."""
+    """sql/040: o feed (e a mesma fonte no catálogo) passa a vir pelo Worker
+    (rede.py) ou, sem ele, pelo hub."""
     with conn.cursor() as cur:
         cur.execute("update feeds set coletar_pelo_hub = true where id = %s", (feed_id,))
         cur.execute("update feed_catalog set coletar_pelo_hub = true where url = %s", (url,))
@@ -375,9 +394,11 @@ def main():
         print(f"{len(fontes)} feed(s) seguido(s).")
 
         for source in fontes:
-            print(f"Coletando: {source['url']} ({source['type']})")
+            print(f"Coletando: {source['url']} ({source['type']}{', pelo Worker' if source['pelo_worker'] else ''})")
             try:
-                if source["type"] == "rss":
+                if tem_api(source["url"]):
+                    artigos = coletar_pela_api(source)
+                elif source["type"] == "rss":
                     artigos = coletar_rss(source)
                 elif source["type"] == "sitemap":
                     artigos = coletar_sitemap(source, conn)
@@ -387,9 +408,12 @@ def main():
                 print(f"  erro ao coletar {source['url']}: {erro}")
                 continue
 
-            if source.get("bloqueado"):
+            if source.get("bloqueado") and source["pelo_worker"]:
+                print("  o site barrou também o Worker: ficou com o Google Notícias")
+            elif source.get("bloqueado"):
                 marcar_pelo_hub(conn, source["id"], source["url"])
-                print("  o site barrou o GitHub: daqui pra frente quem coleta é o hub (Vercel)")
+                quem = "o Worker (Cloudflare)" if tem_worker() else "o hub (Vercel)"
+                print(f"  o site barrou o GitHub: daqui pra frente quem coleta é {quem}")
 
             if not source["tem_artigos"]:
                 total = len(artigos)

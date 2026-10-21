@@ -30,9 +30,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
 
       - name: Instalar dependências
-        run: pip install -r requirements.txt
+        # versões fixas em constraints.txt (auditoria de 20/10)
+        run: pip install -r requirements.txt -c constraints.txt
 
       - name: Enviar resumos do horário
         working-directory: envio

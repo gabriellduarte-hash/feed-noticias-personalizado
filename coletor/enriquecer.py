@@ -17,6 +17,9 @@ Regras:
   - cada notícia é tentada uma vez só (enriquecido_em), com ou sem sucesso;
   - respeita o robots.txt de cada site (lido uma vez por rodada);
   - se um site bloquear (403/429), desiste dele no resto da rodada;
+  - sites que barram o GitHub (coletar_pelo_hub) abrem pelo Worker do
+    Cloudflare (rede.py), que confere o robots.txt; sem o Worker, quem
+    abre as páginas deles é o hub, na Vercel;
   - notícias do Google Notícias ficam de fora: o link passa por um
     redirecionamento do Google que não dá pra resolver de forma confiável.
 
@@ -24,6 +27,9 @@ Uso (de dentro de coletor/):
     python enriquecer.py               # até 60 de cada tabela, das mais novas
     python enriquecer.py --fonte <id>  # só as notícias de uma fonte (workflow "Fonte nova")
     python enriquecer.py --simular     # baixa e mostra, sem gravar
+    python enriquecer.py --refazer exame.com --dias 3
+        # abre de novo as páginas desse site e troca o texto: pra quando a
+        # extração melhora (ex.: as "Perguntas frequentes" da Exame)
 """
 import argparse
 import re
@@ -35,8 +41,10 @@ import requests
 import trafilatura
 from psycopg2.extras import RealDictCursor
 
+from apis import pagina_pela_api, tem_api_da_pagina
 from coletar import USER_AGENT
 from db import get_connection, resolver_feed
+from rede import RobotsNaoDeixa, baixar, tem_worker
 from texto import texto_da_pagina
 
 POR_RODADA = 60          # por tabela; a coleta roda de hora em hora
@@ -64,10 +72,11 @@ def parece_cortado(texto):
 TABELAS = {"articles": "fontes dos usuários", "catalog_articles": "catálogo"}
 
 
-# Sites que barram o GitHub: quem abre as páginas é o hub, na Vercel (sql/040)
-FORA_DO_HUB = {
-    "articles": "not exists (select 1 from feeds f where f.id = feed_id and f.coletar_pelo_hub)",
-    "catalog_articles": "not exists (select 1 from feed_catalog f where f.id = catalog_id and f.coletar_pelo_hub)",
+# Sites que barram o GitHub (sql/040): as páginas abrem pelo Worker
+# (rede.py); sem ele, quem abre é o hub, na Vercel
+PELO_WORKER = {
+    "articles": "exists (select 1 from feeds f where f.id = feed_id and f.coletar_pelo_hub)",
+    "catalog_articles": "exists (select 1 from feed_catalog f where f.id = catalog_id and f.coletar_pelo_hub)",
 }
 COLUNA_DA_FONTE = {"articles": "feed_id", "catalog_articles": "catalog_id"}
 
@@ -77,18 +86,19 @@ def pendentes(conn, tabela, fonte_id=None, limite=POR_RODADA):
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""
-            select id, url, content, image_url, author, {COLUNA_DA_FONTE[tabela]} as fonte
+            select id, url, content, image_url, author, {COLUNA_DA_FONTE[tabela]} as fonte,
+                   {PELO_WORKER[tabela]} as pelo_worker
             from {tabela}
             where enriquecido_em is null
               and url not like 'https://news.google.com/%%'
               and (content is null or length(content) < %(curto)s or image_url is null
                    or content ~* %(cortado)s)
-              and {FORA_DO_HUB[tabela]}
+              and (%(worker)s or not {PELO_WORKER[tabela]})
               {filtro_fonte}
             order by collected_at desc
             limit %(limite)s
             """,
-            {"curto": TEXTO_CURTO, "limite": limite, "fonte": fonte_id, "cortado": CORTADO},
+            {"curto": TEXTO_CURTO, "limite": limite, "fonte": fonte_id, "cortado": CORTADO, "worker": tem_worker()},
         )
         return cur.fetchall()
 
@@ -106,7 +116,7 @@ class Robots:
         if dominio not in self.cache:
             rp = robotparser.RobotFileParser()
             try:
-                resp = requests.get(f"{dominio}/robots.txt", headers={"User-Agent": USER_AGENT}, timeout=10)
+                resp = baixar(f"{dominio}/robots.txt", USER_AGENT, timeout=10)
                 rp.parse(resp.text.splitlines() if resp.ok else [])
             except requests.RequestException:
                 rp.parse([])  # sem robots.txt acessível: liberado (projeto pessoal, baixo volume)
@@ -114,8 +124,14 @@ class Robots:
         return self.cache[dominio].can_fetch(USER_AGENT, url)
 
 
-def extrair(url):
-    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=12)
+def extrair(url, pelo_worker=False):
+    # site com API pública (apis.py, ex.: ESPN): texto e foto sem abrir a
+    # página, que barra o GitHub
+    if tem_api_da_pagina(url):
+        achado = pagina_pela_api(url, USER_AGENT)
+        if achado:
+            return achado
+    resp = baixar(url, USER_AGENT, pelo_worker, timeout=12)
     resp.raise_for_status()
     inicio = resp.text[:30000]
     titulo = TITULO.search(inicio)
@@ -169,7 +185,8 @@ def remover_sumida(conn, tabela, noticia):
 
 def mandar_pro_hub(conn, tabela, fonte_id):
     """O site barra as páginas pras máquinas do GitHub: daqui pra frente
-    quem coleta e abre as páginas dele é o hub, na Vercel (sql/040)."""
+    quem coleta e abre as páginas dele é o Worker (rede.py) ou, sem ele, o
+    hub, na Vercel (sql/040)."""
     with conn.cursor() as cur:
         if tabela == "articles":
             cur.execute("update feeds set coletar_pelo_hub = true where id = %s returning url", (fonte_id,))
@@ -188,11 +205,55 @@ def marcar_tentada(conn, tabela, noticia_id):
     conn.commit()
 
 
+def refazer(conn, dominio, dias, robots, simular=False):
+    """Abre de novo as páginas de um site (últimos `dias`) e troca o texto
+    pelo da extração de agora."""
+    for tabela in TABELAS:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""select id, url, length(coalesce(content, '')) from {tabela}
+                    where url like %s and collected_at > now() - make_interval(days => %s)
+                    order by collected_at desc""",
+                (f"%{dominio}%", dias),
+            )
+            noticias = cur.fetchall()
+        conn.commit()
+        trocadas = 0
+        for id_, url, tamanho in noticias:
+            if not robots.pode(url):
+                continue
+            try:
+                achado = extrair(url)
+            except Exception as erro:
+                print(f"  erro em {url[:70]}: {type(erro).__name__}")
+                continue
+            if achado["texto"] and len(achado["texto"]) != tamanho:
+                trocadas += 1
+                if simular:
+                    print(f"  {tamanho} -> {len(achado['texto'])} caracteres: {url[:70]}")
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(f"update {tabela} set content = %s where id = %s", (achado["texto"], id_))
+                    conn.commit()
+            time.sleep(PAUSA_SEGUNDOS)
+        print(f"{TABELAS[tabela]}: {len(noticias)} notícia(s) de {dominio}, {trocadas} com o texto trocado")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fonte", help="só as notícias deste feed (feeds.id ou sources.id)")
     parser.add_argument("--simular", action="store_true", help="baixa e mostra, sem gravar")
+    parser.add_argument("--refazer", metavar="DOMINIO", help="abre de novo as páginas desse site e troca o texto")
+    parser.add_argument("--dias", type=int, default=3, help="com --refazer: das notícias desses últimos dias")
     args = parser.parse_args()
+
+    if args.refazer:
+        conn = get_connection()
+        try:
+            refazer(conn, args.refazer, args.dias, Robots(), args.simular)
+        finally:
+            conn.close()
+        return
 
     robots = Robots()
     bloqueados = set()
@@ -208,22 +269,36 @@ def main():
             for n in noticias:
                 dominio = urlparse(n["url"]).netloc
                 if dominio in bloqueados:
-                    continue  # barrou nesta rodada: a notícia fica pra fila do hub
-                if not robots.pode(n["url"]):
+                    # barrou nesta rodada: pelo GitHub, a notícia fica na fila
+                    # (a próxima rodada abre pelo Worker ou pelo hub); se
+                    # barrou até o Worker, sai da fila
+                    if n["pelo_worker"] and not args.simular:
+                        marcar_tentada(conn, tabela, n["id"])
+                    continue
+                # pelo Worker, quem confere o robots.txt é ele (RobotsNaoDeixa)
+                if not n["pelo_worker"] and not robots.pode(n["url"]):
                     if not args.simular:
                         marcar_tentada(conn, tabela, n["id"])
                     continue
                 try:
-                    achado = extrair(n["url"])
+                    achado = extrair(n["url"], n["pelo_worker"])
+                except RobotsNaoDeixa:
+                    if not args.simular:
+                        marcar_tentada(conn, tabela, n["id"])
+                    continue
                 except (requests.HTTPError, Barrado) as erro:
                     resposta = getattr(erro, "response", None)
                     status = resposta.status_code if resposta is not None else ("desafio" if isinstance(erro, Barrado) else None)
-                    if status in (401, 403, 429, "desafio"):
-                        print(f"  {dominio} barrou o GitHub ({status}); daqui pra frente, quem abre é o hub")
+                    if status in (401, 403, 429, "desafio") and n["pelo_worker"]:
+                        print(f"  {dominio} barrou também o Worker ({status})")
+                        bloqueados.add(dominio)
+                    elif status in (401, 403, 429, "desafio"):
+                        quem = "o Worker" if tem_worker() else "o hub"
+                        print(f"  {dominio} barrou o GitHub ({status}); daqui pra frente, quem abre é {quem}")
                         bloqueados.add(dominio)
                         if not args.simular:
                             mandar_pro_hub(conn, tabela, n["fonte"])
-                            continue  # sem marcar como tentada: fica pra fila do hub
+                            continue  # sem marcar como tentada: fica pra próxima rodada
                     if not args.simular:
                         if status in (404, 410):
                             remover_sumida(conn, tabela, n)

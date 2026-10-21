@@ -21,6 +21,11 @@ jobs:
     timeout-minutes: 30
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Worker do Cloudflare (worker/leitor.js) que lê os sites que barram
+      # as máquinas do GitHub (coletor/rede.py). Com ele, o passo do hub
+      # fica de reserva.
+      WORKER_URL: ${{ secrets.WORKER_URL }}
+      WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
       # Senha da rota de coleta do hub (o mesmo valor na Vercel). Sem ela,
       # o passo "Sites que barram o GitHub" é pulado.
       COLETA_SECRET: ${{ secrets.COLETA_SECRET }}
@@ -31,10 +36,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip  # reaproveita os pacotes entre as execuções (roda toda hora)
-          cache-dependency-path: requirements*.txt
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
 
       - name: Instalar dependências
-        run: pip install -r requirements-nlp.txt
+        # versões fixas em constraints.txt (auditoria de 20/10)
+        run: pip install -r requirements-nlp.txt -c constraints.txt
 
       # O modelo dos vetores (vetores.py, ~220 MB) baixa uma vez e fica
       # guardado aqui; sem isso, baixaria toda hora
@@ -55,11 +63,12 @@ jobs:
         timeout-minutes: 10
         continue-on-error: true
 
-      # Sites abertos que barram as máquinas do GitHub (sql/040): quem lê o
-      # feed e abre as páginas deles é o hub, na Vercel. Antes do resumo,
-      # pra IA já ler o texto que o hub trouxer.
+      # Sites abertos que barram as máquinas do GitHub (sql/040): com o
+      # Worker, os passos de coleta e de enriquecimento já leem esses sites
+      # por ele. Sem o Worker, quem lê o feed e abre as páginas é o hub, na
+      # Vercel.
       - name: Sites que barram o GitHub (coleta pelo hub)
-        if: env.COLETA_SECRET != ''
+        if: env.COLETA_SECRET != '' && env.WORKER_URL == ''
         run: |
           curl -sS --fail-with-body --max-time 90 -X POST \
             -H "Authorization: Bearer $COLETA_SECRET" \

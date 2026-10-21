@@ -17,12 +17,12 @@ Uso (de dentro de coletor/):
 import argparse
 import time
 
-import feedparser
 import requests
 from psycopg2.extras import RealDictCursor
 
 from urllib.parse import urlparse
 
+from apis import noticias_pela_api, tem_api
 from alternativas import (
     eh_google_news,
     entradas_do_site,
@@ -31,7 +31,8 @@ from alternativas import (
     limpar_titulo_google_news,
     url_google_news,
 )
-from coletar import USER_AGENT, extrair_imagem_rss, limpar_html, promover, recentes_do_feed
+from coletar import USER_AGENT, baixar_feed, extrair_imagem_rss, limpar_html, promover, recentes_do_feed
+from rede import tem_worker
 from texto import texto_do_rss
 from db import get_connection
 from manchetes import separar_repetidas
@@ -45,17 +46,14 @@ def buscar_catalogo(conn):
     """Só as fontes da vitrine (sql/031). O resto do catálogo é mapa: só é
     coletado quando alguém segue (aí vira fonte normal, no coletar.py)."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        # as que bloqueiam o GitHub são coletadas pelo hub (sql/040)
-        cur.execute("select id, name, url, kind from feed_catalog where vitrine and not coletar_pelo_hub order by name")
+        # as que bloqueiam o GitHub (sql/040) vêm pelo Worker (rede.py);
+        # sem ele, ficam com o hub
+        cur.execute(
+            """select id, name, url, kind, coletar_pelo_hub as pelo_worker from feed_catalog
+               where vitrine and (not coletar_pelo_hub or %s) order by name""",
+            (tem_worker(),),
+        )
         return cur.fetchall()
-
-
-def baixar_feed(url):
-    """Baixa com o nosso User-Agent (o feedparser.parse(url) usaria o dele,
-    que alguns sites bloqueiam) e entrega o conteúdo pro feedparser."""
-    resposta = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
-    resposta.raise_for_status()
-    return feedparser.parse(resposta.content)
 
 
 def noticias_pelo_google_news(url_feed):
@@ -71,10 +69,17 @@ def noticias_pelo_google_news(url_feed):
 
 def coletar_fonte(fonte):
     if fonte["kind"] == "sitemap":
-        return noticias_do_sitemap(fonte["url"]), None
+        return noticias_do_sitemap(fonte["url"], fonte["pelo_worker"]), None
+    if tem_api(fonte["url"]):
+        # site com API pública (apis.py, ex.: ESPN): lista, texto e foto
+        # numa chamada; se ela falhar, segue pelo RSS
+        try:
+            return noticias_pela_api(fonte["url"], USER_AGENT)[:MAX_POR_FONTE], "pela API"
+        except (requests.RequestException, ValueError) as erro:
+            print(f"  API falhou ({erro}); tentando o RSS")
     google_news = eh_google_news(fonte["url"])
     try:
-        noticias = extrair_noticias(baixar_feed(fonte["url"]).entries, google_news)
+        noticias = extrair_noticias(baixar_feed(fonte["url"], fonte["pelo_worker"]).entries, google_news)
         motivo = None if noticias else "RSS veio vazio"
     except Exception as erro:
         noticias, motivo = [], str(erro)
@@ -88,7 +93,7 @@ def coletar_fonte(fonte):
     return noticias_pelo_google_news(fonte["url"]), "via Google Notícias"
 
 
-def noticias_do_sitemap(url):
+def noticias_do_sitemap(url, pelo_worker=False):
     """Só o que o sitemap traz (título, data, imagem): não baixa cada
     matéria, porque aqui são dezenas de fontes por dia, pra uma vitrine."""
     return [
@@ -100,7 +105,7 @@ def noticias_do_sitemap(url):
             "image_url": i["image_url"],
             "published_at": i["published_at"],
         }
-        for i in ler_sitemap(url, USER_AGENT, limite=MAX_POR_FONTE)
+        for i in ler_sitemap(url, USER_AGENT, limite=MAX_POR_FONTE, pelo_worker=pelo_worker)
     ]
 
 
@@ -182,7 +187,7 @@ def main():
 
         total_novos = 0
         for fonte in catalogo:
-            print(f"Coletando: {fonte['name']} ({fonte['url']})")
+            print(f"Coletando: {fonte['name']} ({fonte['url']}){' pelo Worker' if fonte['pelo_worker'] else ''}")
             try:
                 noticias, _ = coletar_fonte(fonte)
             except Exception as erro:
@@ -194,12 +199,15 @@ def main():
                 com_imagem = sum(1 for n in noticias if n["image_url"])
                 print(f"  {len(noticias)} notícia(s), {com_imagem} com imagem")
             else:
-                if fonte.get("bloqueado"):
+                if fonte.get("bloqueado") and fonte["pelo_worker"]:
+                    print("  o site barrou também o Worker: ficou com o Google Notícias")
+                elif fonte.get("bloqueado"):
                     with conn.cursor() as cur:
                         cur.execute("update feed_catalog set coletar_pelo_hub = true where id = %s", (fonte["id"],))
                         cur.execute("update feeds set coletar_pelo_hub = true where url = %s", (fonte["url"],))
                     conn.commit()
-                    print("  o site barrou o GitHub: daqui pra frente quem coleta é o hub (Vercel)")
+                    quem = "o Worker (Cloudflare)" if tem_worker() else "o hub (Vercel)"
+                    print(f"  o site barrou o GitHub: daqui pra frente quem coleta é {quem}")
                 novos = salvar(conn, fonte["id"], noticias)
                 total_novos += novos
                 print(f"  {len(noticias)} notícia(s) encontradas, {novos} nova(s)")

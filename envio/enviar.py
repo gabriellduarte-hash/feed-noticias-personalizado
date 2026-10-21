@@ -281,6 +281,13 @@ def destinatarios(conn, usuario):
     return list(dict.fromkeys([usuario["email"], *extras]))
 
 
+def mascarar(email):
+    """'gabriel@gmail.com' -> 'ga***@gmail.com'. O repositório é público, e
+    o log do GitHub Actions também: e-mail de usuário não pode ir pra lá."""
+    nome, _, dominio = (email or "").partition("@")
+    return f"{nome[:2]}***@{dominio}" if dominio else "***"
+
+
 def marcar_como_enviado(conn, digest_id):
     with conn.cursor() as cur:
         cur.execute("update digests set sent_at = now() where id = %s", (digest_id,))
@@ -318,7 +325,7 @@ def main():
             noticias = noticias_do_periodo(conn, usuario["id"], usuario["topic_ids"], desde)
             completas, manchetes, restantes = separar(noticias, *seguidos(conn, usuario["id"]))
             print(
-                f"- {usuario['email']} ({usuario['hora_envio']}h): {len(noticias)} notícia(s) desde "
+                f"- {mascarar(usuario['email'])} ({usuario['hora_envio']}h): {len(noticias)} notícia(s) desde "
                 f"{desde.astimezone(FUSO):%d/%m %H:%M}; {len(completas)} completa(s), "
                 f"{len(manchetes)} manchete(s), {restantes} no link pro hub"
             )
@@ -338,7 +345,7 @@ def main():
             if args.simular:
                 arquivo = Path(__file__).parent / f"previa-{usuario['id']}.html"
                 arquivo.write_text(html, encoding="utf-8")
-                print(f"  simulação: enviaria pra {para}; prévia em {arquivo.name}")
+                print(f"  simulação: enviaria pra {', '.join(map(mascarar, para))}; prévia em {arquivo.name}")
                 continue
 
             digest_id = salvar_digest(conn, usuario["id"], agora.date(), html)
@@ -349,7 +356,9 @@ def main():
                     enviar_email(destino, f"Seu resumo de {data_extenso(agora.date())}", html)
                     enviados += 1
                 except (ResendError, OSError) as erro:
-                    print(f"  erro ao enviar pra {destino}: {erro}")
+                    # a mensagem do Resend pode repetir o endereço
+                    motivo = str(erro).replace(destino, mascarar(destino))
+                    print(f"  erro ao enviar pra {mascarar(destino)}: {motivo}")
                 time.sleep(PAUSA_ENTRE_ENVIOS)
             if not enviados:
                 # não marca como enviado: a próxima rodada (daqui a 1h) tenta de novo

@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote, urldefrag, urlparse
 
-import requests
+from rede import baixar
 
 NS = {
     "sm": "http://www.sitemaps.org/schemas/sitemap/0.9",
@@ -56,16 +56,16 @@ def separar_filtro(url):
     return endereco, parse_qs(fragmento).get("caminho", [None])[0]
 
 
-def _baixar_xml(url, user_agent):
-    resposta = requests.get(url, headers={"User-Agent": user_agent}, timeout=15)
+def _baixar_xml(url, user_agent, pelo_worker=False):
+    resposta = baixar(url, user_agent, pelo_worker)
     resposta.raise_for_status()
     if len(resposta.content) > MAX_BYTES_SITEMAP:
         raise ValueError("sitemap grande demais")
     return ET.fromstring(resposta.content)
 
 
-def _ler(url, user_agent, profundidade=0):
-    raiz = _baixar_xml(url, user_agent)
+def _ler(url, user_agent, profundidade=0, pelo_worker=False):
+    raiz = _baixar_xml(url, user_agent, pelo_worker)
     if raiz.tag.endswith("sitemapindex"):
         if profundidade >= 1:  # índice dentro de índice: não segue
             return []
@@ -77,7 +77,7 @@ def _ler(url, user_agent, profundidade=0):
         itens = []
         for endereco, _ in filhos[:MAX_SITEMAPS_FILHOS]:
             try:
-                itens += _ler(endereco, user_agent, profundidade + 1)
+                itens += _ler(endereco, user_agent, profundidade + 1, pelo_worker)
             except Exception:
                 continue  # um filho quebrado não invalida os outros
         return itens
@@ -97,10 +97,11 @@ def _ler(url, user_agent, profundidade=0):
     return itens
 
 
-def ler_sitemap(url, user_agent, limite=30):
-    """Notícias de um sitemap, da mais nova pra mais antiga."""
+def ler_sitemap(url, user_agent, limite=30, pelo_worker=False):
+    """Notícias de um sitemap, da mais nova pra mais antiga. pelo_worker:
+    site que barra o GitHub (rede.py)."""
     endereco, caminho = separar_filtro(url)
-    itens = _ler(endereco, user_agent)
+    itens = _ler(endereco, user_agent, pelo_worker=pelo_worker)
     if caminho:
         itens = [i for i in itens if urlparse(i["url"]).path.startswith(caminho)]
     vistos = set()
@@ -112,7 +113,7 @@ def ler_sitemap(url, user_agent, limite=30):
 def sitemaps_do_robots(url_site, user_agent):
     """Sitemaps declarados no robots.txt, com os de notícia primeiro."""
     p = urlparse(url_site)
-    resposta = requests.get(f"{p.scheme}://{p.netloc}/robots.txt", headers={"User-Agent": user_agent}, timeout=10)
+    resposta = baixar(f"{p.scheme}://{p.netloc}/robots.txt", user_agent, timeout=10)
     resposta.raise_for_status()
     declarados = [
         linha.split(":", 1)[1].strip()

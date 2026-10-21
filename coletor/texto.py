@@ -231,13 +231,46 @@ def texto_do_rss(entry):
     return melhor[:MAX_CARACTERES] or None
 
 
+# Bloco de "Perguntas frequentes" que alguns sites põem no fim da matéria
+# (Exame): a pergunta fica num <summary> e a resposta num parágrafo. O
+# extrator perdia a pergunta e guardava a resposta, que reconta a notícia:
+# parecia texto duplicado.
+_PERGUNTAS_FREQUENTES = re.compile(r"perguntas\s+frequentes|perguntas\s+e\s+respostas|\bfaq\b|frequently\s+asked", re.I)
+
+
+def sem_perguntas_frequentes(pagina_html):
+    """A página sem os <details> (pergunta e resposta escondidas) e sem a
+    seção que começa num título "Perguntas frequentes"."""
+    try:
+        doc = lhtml.fromstring(pagina_html)
+    except (etree.ParserError, ValueError):
+        return pagina_html
+    for el in doc.xpath("//details"):
+        el.drop_tree()
+    for titulo in doc.xpath("//h2 | //h3 | //h4"):
+        if titulo.getparent() is None or not _PERGUNTAS_FREQUENTES.search(titulo.text_content() or ""):
+            continue
+        pai = titulo.getparent()
+        if pai.tag == "section":
+            pai.drop_tree()
+            continue
+        # sem <section>: o título e o que vem depois até o próximo título do mesmo nível
+        irmao = titulo.getnext()
+        while irmao is not None and not (irmao.tag in ("h1", "h2", "h3", "h4") and irmao.tag <= titulo.tag):
+            seguinte = irmao.getnext()
+            irmao.drop_tree()
+            irmao = seguinte
+        titulo.drop_tree()
+    return lhtml.tostring(doc)
+
+
 def texto_da_pagina(pagina_html):
     """pagina_html: de preferência os bytes da resposta (resp.content), pro
     trafilatura descobrir a codificação pela própria página. Com resp.text,
     o requests assume Latin-1 quando o servidor não diz a codificação, e
     "simbólico" vira "simbÃ³lico"."""
     texto = trafilatura.extract(
-        pagina_html, include_comments=False, include_tables=False, favor_precision=True
+        sem_perguntas_frequentes(pagina_html), include_comments=False, include_tables=False, favor_precision=True
     )
     return limpar_texto(texto or "")[:MAX_CARACTERES] or None
 
